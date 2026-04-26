@@ -28,14 +28,6 @@ const DEFAULT_BOOKING_TYPE = {
 // Add or rename slot menu options here without changing the grid renderer below.
 const SLOT_ACTIONS = [
   {
-    id: "reservation",
-    label: "Reservation",
-    mode: "open-form",
-    slotType: "reservation",
-    slotLabel: "Reservation",
-    tone: "primary"
-  },
-  {
     id: "open-time",
     label: "Open Time",
     mode: "open-form",
