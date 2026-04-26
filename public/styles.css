@@ -380,17 +380,51 @@ button:hover {
 }
 
 .schedule-slot.managed-slot {
-  background: #fff0ee;
+  background: #fff7f1;
 }
 
 .schedule-slot.managed-slot .slot-pill span {
   border-color: rgba(181, 69, 53, 0.18);
 }
 
-.schedule-slot.danger-slot .slot-pill span {
+.schedule-slot.slot-type-open-time {
+  background: #eef8fd;
+}
+
+.schedule-slot.slot-type-open-time .slot-pill span {
+  background: #fafdff;
+  border-color: rgba(20, 146, 207, 0.24);
+  color: var(--accent-dark);
+}
+
+.schedule-slot.slot-type-canceled {
+  background: #fff0ee;
+}
+
+.schedule-slot.slot-type-canceled .slot-pill span {
   background: #fff8f7;
   border-color: rgba(181, 69, 53, 0.28);
   color: var(--danger);
+}
+
+.schedule-slot.slot-type-maintenance {
+  background: #f1f4f7;
+}
+
+.schedule-slot.slot-type-maintenance .slot-pill span {
+  background: #fbfdff;
+  border-color: rgba(107, 125, 144, 0.28);
+  color: #476175;
+}
+
+.schedule-slot.slot-type-lesson {
+  background: #fff4e8;
+}
+
+.schedule-slot.slot-type-lesson .slot-pill span {
+  background: #fffaf5;
+  border-color: rgba(223, 98, 41, 0.24);
+  color: var(--accent-orange-dark);
 }
 
 .slot-action-menu {
@@ -415,8 +449,16 @@ button:hover {
   border-radius: 12px;
 }
 
-.slot-action-button.danger {
+.slot-action-button.tone-danger {
   background: linear-gradient(135deg, #d45e48 0%, #b54535 100%);
+}
+
+.slot-action-button.tone-muted {
+  background: linear-gradient(135deg, #6f8193 0%, #536577 100%);
+}
+
+.slot-action-button.tone-warm {
+  background: linear-gradient(135deg, #df6229 0%, #bb4f1d 100%);
 }
 
 .side-panel {
@@ -462,9 +504,24 @@ button:hover {
   background: #fffaf8;
 }
 
-.agenda-card.danger-slot {
+.agenda-card.slot-type-open-time {
+  border-color: rgba(20, 146, 207, 0.16);
+  background: #f4fbff;
+}
+
+.agenda-card.slot-type-canceled {
   border-color: rgba(181, 69, 53, 0.24);
   background: #fff8f7;
+}
+
+.agenda-card.slot-type-maintenance {
+  border-color: rgba(107, 125, 144, 0.22);
+  background: #f8fafc;
+}
+
+.agenda-card.slot-type-lesson {
+  border-color: rgba(223, 98, 41, 0.22);
+  background: #fff9f3;
 }
 
 .agenda-card-header {
@@ -496,9 +553,24 @@ button:hover {
   color: var(--accent-orange-dark);
 }
 
-.status-pill.danger-slot {
+.status-pill.slot-type-open-time {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.status-pill.slot-type-canceled {
   background: #fdecea;
   color: var(--danger);
+}
+
+.status-pill.slot-type-maintenance {
+  background: #edf2f6;
+  color: #476175;
+}
+
+.status-pill.slot-type-lesson {
+  background: #fff0e4;
+  color: var(--accent-orange-dark);
 }
 
 .empty-state {

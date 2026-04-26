@@ -42,6 +42,22 @@ const SLOT_ACTIONS = [
     slotType: "canceled",
     slotLabel: "Canceled",
     tone: "danger"
+  },
+  {
+    id: "maintenance",
+    label: "Maintenance",
+    mode: "open-form",
+    slotType: "maintenance",
+    slotLabel: "Maintenance",
+    tone: "muted"
+  },
+  {
+    id: "lesson",
+    label: "Lesson",
+    mode: "open-form",
+    slotType: "lesson",
+    slotLabel: "Lesson",
+    tone: "warm"
   }
 ];
 
@@ -176,6 +192,12 @@ function getSlotTypeMeta(slotType) {
 
 function isManagedSlotType(slotType) {
   return slotType !== DEFAULT_BOOKING_TYPE.slotType;
+}
+
+function getSlotTypeClassName(slotType) {
+  return isManagedSlotType(slotType)
+    ? `slot-type-${String(slotType).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+    : "";
 }
 
 function getPlayerNameFieldLabel(slotType) {
@@ -433,9 +455,10 @@ function buildSchedulerGrid() {
         slot.classList.add("booked");
         if (booking.slotType !== "reservation") {
           slot.classList.add("managed-slot");
-        }
-        if (booking.slotType === "canceled") {
-          slot.classList.add("danger-slot");
+          const slotTypeClassName = getSlotTypeClassName(booking.slotType);
+          if (slotTypeClassName) {
+            slot.classList.add(slotTypeClassName);
+          }
         }
         if (booking.isOwner) {
           slot.classList.add("owned");
@@ -470,7 +493,7 @@ function buildSchedulerGrid() {
           SLOT_ACTIONS.forEach((action) => {
             const actionButton = document.createElement("button");
             actionButton.type = "button";
-            actionButton.className = `slot-action-button ${action.tone === "danger" ? "danger" : ""}`.trim();
+            actionButton.className = `slot-action-button ${action.tone ? `tone-${action.tone}` : ""}`.trim();
             actionButton.textContent = action.label;
             actionButton.addEventListener("click", async (event) => {
               event.stopPropagation();
@@ -499,11 +522,14 @@ function renderAgenda() {
     const court = state.courts.find((item) => item.id === booking.courtId);
     const card = document.createElement("button");
     card.type = "button";
-    card.className = `agenda-card ${booking.isOwner ? "owned" : ""} ${booking.slotType !== "reservation" ? "managed-slot" : ""} ${booking.slotType === "canceled" ? "danger-slot" : ""}`.trim();
+    const managedSlotClassName = booking.slotType !== "reservation"
+      ? `managed-slot ${getSlotTypeClassName(booking.slotType)}`
+      : "";
+    card.className = `agenda-card ${booking.isOwner ? "owned" : ""} ${managedSlotClassName}`.trim();
     card.innerHTML = `
       <div class="agenda-card-header">
         <strong>${booking.displayName}</strong>
-        <span class="status-pill ${booking.slotType !== "reservation" ? "managed-slot" : booking.status} ${booking.slotType === "canceled" ? "danger-slot" : ""}">${booking.slotType !== "reservation" ? booking.slotLabel.toLowerCase() : booking.status}</span>
+        <span class="status-pill ${booking.slotType !== "reservation" ? `managed-slot ${getSlotTypeClassName(booking.slotType)}` : booking.status}">${booking.slotType !== "reservation" ? booking.slotLabel.toLowerCase() : booking.status}</span>
       </div>
       <span>${court ? court.name : booking.courtId}</span>
       <span>${formatTimeLabel(booking.startTime)} - ${formatTimeLabel(booking.endTime)}</span>
