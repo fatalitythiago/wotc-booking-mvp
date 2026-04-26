@@ -1,0 +1,10 @@
+{
+  "name": "court-booking-mvp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Simple internal tennis court booking system starter with no external dependencies.",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js"
+  }
+}
