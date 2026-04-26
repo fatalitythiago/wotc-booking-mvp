@@ -1,1 +1,35 @@
-[]
+[
+  {
+    "id": "59df3edc-62e5-4460-bf53-fd34f967bf03",
+    "date": "2026-04-26",
+    "courtId": "court-1",
+    "playerName": "Thiago Ferreira",
+    "startTime": "06:00",
+    "endTime": "07:00",
+    "notes": "",
+    "status": "cancelled",
+    "slotType": "open-time",
+    "slotLabel": "Open Time",
+    "createdAt": "2026-04-26T23:28:53.751Z",
+    "userId": "staff-1",
+    "ownerEmail": "staff@wotc.local",
+    "createdByRole": "staff",
+    "cancelledAt": "2026-04-26T23:30:08.968Z"
+  },
+  {
+    "id": "d07100bf-c59a-4eee-903b-1cb966ee3883",
+    "date": "2026-04-26",
+    "courtId": "court-2",
+    "playerName": "Thiago Ferreira",
+    "startTime": "09:00",
+    "endTime": "10:00",
+    "notes": "",
+    "status": "active",
+    "slotType": "canceled",
+    "slotLabel": "Canceled",
+    "createdAt": "2026-04-26T23:29:37.333Z",
+    "userId": "staff-1",
+    "ownerEmail": "staff@wotc.local",
+    "createdByRole": "staff"
+  }
+]
