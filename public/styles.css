@@ -153,6 +153,59 @@ textarea {
   resize: vertical;
 }
 
+.player-combobox {
+  position: relative;
+}
+
+.player-combobox.is-disabled .player-suggestions {
+  display: none;
+}
+
+.player-suggestions {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 8;
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 18px 40px rgba(23, 50, 77, 0.14);
+}
+
+.player-suggestion {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.player-suggestion:hover {
+  border-color: var(--line);
+  background: var(--accent-soft);
+}
+
+.player-suggestion span,
+.player-suggestion-empty {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.player-suggestion-empty {
+  padding: 10px;
+}
+
 button {
   border: none;
   border-radius: 14px;
@@ -207,25 +260,25 @@ button:hover {
 }
 
 .app-shell {
-  padding: 24px 0 36px;
+  padding: 12px 0 28px;
 }
 
 .topbar {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
-  gap: 24px;
-  margin-bottom: 20px;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 10px;
 }
 
 .brand-lockup {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 0;
 }
 
 .topbar-logo {
-  width: 170px;
+  width: 118px;
   flex: 0 0 auto;
 }
 
@@ -251,9 +304,16 @@ button:hover {
 }
 
 .workspace {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 0.34fr);
   gap: 20px;
+  transition: grid-template-columns 0.2s ease, gap 0.2s ease;
+}
+
+.workspace.side-panel-collapsed {
+  grid-template-columns: minmax(0, 1fr) 0;
+  gap: 0;
 }
 
 .panel {
@@ -269,11 +329,18 @@ button:hover {
 }
 
 .scheduler-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
   gap: 16px;
   margin-bottom: 16px;
+}
+
+.scheduler-date-menu {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
 }
 
 .scheduler-date {
@@ -281,7 +348,10 @@ button:hover {
 }
 
 .scheduler-menu {
-  position: relative;
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
 }
 
 .hamburger-button {
@@ -309,17 +379,32 @@ button:hover {
 }
 
 .scheduler-menu-panel {
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
-  z-index: 4;
-  min-width: 210px;
-  padding: 14px;
+  flex: 1 1 min(560px, 100%);
+  display: grid;
+  grid-template-columns: repeat(5, minmax(76px, 1fr));
+  gap: 8px;
+  max-width: 620px;
+  padding: 8px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 14px;
   background: #fff;
-  color: var(--muted);
-  box-shadow: 0 18px 40px rgba(23, 50, 77, 0.14);
+  box-shadow: 0 10px 26px rgba(23, 50, 77, 0.1);
+}
+
+.scheduler-menu-action {
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.86rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.scheduler-menu-action:hover {
+  background: var(--accent-soft);
 }
 
 .scheduler-wrapper {
@@ -515,6 +600,52 @@ button:hover {
   display: grid;
   gap: 20px;
   align-content: start;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+}
+
+.workspace.side-panel-collapsed .side-panel {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(24px);
+}
+
+.booking-panel {
+  transition: padding 0.2s ease, box-shadow 0.2s ease;
+}
+
+.booking-panel .panel-head {
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.booking-panel-body {
+  display: grid;
+  gap: 10px;
+}
+
+.side-panel-toggle {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 10px 24px rgba(23, 50, 77, 0.12);
+  font-size: 1.35rem;
+  line-height: 1;
+  justify-self: end;
+}
+
+.side-panel-toggle:hover {
+  background: var(--accent-soft);
 }
 
 .time-row,
@@ -630,16 +761,42 @@ button:hover {
 }
 
 @media (max-width: 1100px) {
-  .workspace,
   .login-card {
     grid-template-columns: 1fr;
   }
 
+  .workspace,
+  .workspace.side-panel-collapsed {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .workspace.side-panel-collapsed .side-panel {
+    display: none;
+  }
+
   .topbar,
-  .topbar-actions,
-  .scheduler-toolbar {
+  .topbar-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .scheduler-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .scheduler-date-menu {
+    flex-wrap: wrap;
+  }
+
+  .scheduler-menu {
+    flex-wrap: wrap;
+    justify-self: stretch;
+    width: 100%;
+  }
+
+  .scheduler-menu-panel {
+    grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
   }
 
   .brand-lockup {

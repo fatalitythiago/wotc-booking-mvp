@@ -34,6 +34,14 @@ const USERS = [
   }
 ];
 
+const CLIENTS = USERS
+  .filter((user) => user.role === "client")
+  .map((user) => ({
+    id: user.id,
+    name: user.name,
+    email: user.email
+  }));
+
 const sessions = new Map();
 
 function readBookings() {
@@ -287,6 +295,15 @@ function handleGetCourts(request, response) {
   sendJson(response, 200, { courts: COURTS, user: normalizeUser(user) });
 }
 
+function handleGetClients(request, response) {
+  const user = requireAuth(request, response);
+  if (!user) {
+    return;
+  }
+
+  sendJson(response, 200, { clients: CLIENTS });
+}
+
 function handleGetBookings(request, response) {
   const user = requireAuth(request, response);
   if (!user) {
@@ -504,6 +521,11 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === "GET" && url.pathname === "/api/courts") {
     handleGetCourts(request, response);
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/clients") {
+    handleGetClients(request, response);
     return;
   }
 

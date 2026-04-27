@@ -42,10 +42,6 @@
       <header class="topbar">
         <div class="brand-lockup">
           <img class="brand-logo topbar-logo" src="/assets/wotc-logo.png" alt="West Orange Tennis Club logo" />
-          <div>
-            <p class="eyebrow">West Orange Tennis Club</p>
-            <h1>Scheduler</h1>
-          </div>
         </div>
         <div class="topbar-actions">
           <div class="user-chip">
@@ -58,37 +54,58 @@
         </div>
       </header>
 
-      <main class="workspace">
+      <main id="schedulerWorkspace" class="workspace side-panel-collapsed">
         <section class="panel scheduler-panel">
           <div class="scheduler-toolbar">
-            <label class="date-stack scheduler-date">
-              <span>Schedule date</span>
-              <input type="date" id="datePicker" />
-            </label>
-            <div class="scheduler-menu">
-              <button
-                id="schedulerMenuButton"
-                class="hamburger-button"
-                type="button"
-                aria-label="Open scheduler menu"
-                aria-expanded="false"
-                aria-controls="schedulerMenuPanel"
-              >
-                <span></span>
-                <span></span>
-                <span></span>
-              </button>
-              <div id="schedulerMenuPanel" class="scheduler-menu-panel hidden">
-                Menu options coming soon.
+            <div class="scheduler-date-menu">
+              <label class="date-stack scheduler-date">
+                <span>Schedule date</span>
+                <input type="date" id="datePicker" />
+              </label>
+              <div class="scheduler-menu">
+                <button
+                  id="schedulerMenuButton"
+                  class="hamburger-button"
+                  type="button"
+                  aria-label="Open scheduler menu"
+                  aria-expanded="false"
+                  aria-controls="schedulerMenuPanel"
+                >
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </button>
+                <div id="schedulerMenuPanel" class="scheduler-menu-panel hidden" aria-label="Scheduler menu">
+                  <button type="button" class="scheduler-menu-action">Menu 1</button>
+                  <button type="button" class="scheduler-menu-action">Menu 2</button>
+                  <button type="button" class="scheduler-menu-action">Menu 3</button>
+                  <button type="button" class="scheduler-menu-action">Menu 4</button>
+                  <button type="button" class="scheduler-menu-action">Menu 5</button>
+                  <button type="button" class="scheduler-menu-action">Menu 6</button>
+                  <button type="button" class="scheduler-menu-action">Menu 7</button>
+                  <button type="button" class="scheduler-menu-action">Menu 8</button>
+                  <button type="button" class="scheduler-menu-action">Menu 9</button>
+                  <button type="button" class="scheduler-menu-action">Menu 10</button>
+                </div>
               </div>
             </div>
+            <button
+              type="button"
+              id="sidePanelToggle"
+              class="side-panel-toggle"
+              aria-expanded="false"
+              aria-controls="sidePanel"
+              aria-label="Open booking side panel"
+            >
+              ‹
+            </button>
           </div>
           <div class="scheduler-wrapper">
             <div id="schedulerGrid" class="scheduler-grid"></div>
           </div>
         </section>
 
-        <aside class="side-panel">
+        <aside id="sidePanel" class="side-panel" aria-hidden="true">
           <section class="panel booking-panel">
             <div class="panel-head">
               <div>
@@ -97,53 +114,66 @@
               </div>
             </div>
 
-            <form id="bookingForm" class="booking-form">
-              <input type="hidden" id="bookingId" name="bookingId" />
+            <div id="bookingPanelBody" class="booking-panel-body">
+              <form id="bookingForm" class="booking-form">
+                <input type="hidden" id="bookingId" name="bookingId" />
 
-              <label id="playerNameLabel">
-                <span id="playerNameLabelText">Player name</span>
-                <input type="text" id="playerName" name="playerName" />
-              </label>
-
-              <label id="slotTypeLabel" class="hidden">
-                Booking type
-                <select id="slotType" name="slotType"></select>
-              </label>
-
-              <label>
-                Court
-                <select id="courtId" name="courtId" required></select>
-              </label>
-
-              <label>
-                Date
-                <input type="date" id="bookingDate" name="date" required />
-              </label>
-
-              <div class="time-row">
-                <label>
-                  Start time
-                  <select id="startTime" name="startTime" required></select>
+                <label id="playerNameLabel">
+                  <span id="playerNameLabelText">Player name</span>
+                  <div id="playerCombobox" class="player-combobox">
+                    <input
+                      type="text"
+                      id="playerName"
+                      name="playerName"
+                      autocomplete="off"
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-expanded="false"
+                      aria-controls="playerSuggestions"
+                    />
+                    <div id="playerSuggestions" class="player-suggestions hidden" role="listbox"></div>
+                  </div>
                 </label>
-                <label>
-                  End time
-                  <select id="endTime" name="endTime" required></select>
+
+                <label id="slotTypeLabel" class="hidden">
+                  Booking type
+                  <select id="slotType" name="slotType"></select>
                 </label>
-              </div>
 
-              <label>
-                Notes
-                <textarea id="notes" name="notes" rows="4" placeholder="Optional booking notes"></textarea>
-              </label>
+                <label>
+                  Court
+                  <select id="courtId" name="courtId" required></select>
+                </label>
 
-              <div class="form-actions">
-                <button type="submit" id="saveButton">Save booking</button>
-                <button type="button" id="cancelBookingButton" class="secondary-button hidden">Cancel booking</button>
-                <button type="button" id="resetFormButton" class="ghost-button">New booking</button>
-              </div>
-            </form>
+                <label>
+                  Date
+                  <input type="date" id="bookingDate" name="date" required />
+                </label>
 
-            <p id="formMessage" class="message" aria-live="polite"></p>
+                <div class="time-row">
+                  <label>
+                    Start time
+                    <select id="startTime" name="startTime" required></select>
+                  </label>
+                  <label>
+                    End time
+                    <select id="endTime" name="endTime" required></select>
+                  </label>
+                </div>
+
+                <label>
+                  Notes
+                  <textarea id="notes" name="notes" rows="4" placeholder="Optional booking notes"></textarea>
+                </label>
+
+                <div class="form-actions">
+                  <button type="submit" id="saveButton">Save booking</button>
+                  <button type="button" id="cancelBookingButton" class="secondary-button hidden">Cancel booking</button>
+                </div>
+              </form>
+
+              <p id="formMessage" class="message" aria-live="polite"></p>
+            </div>
           </section>
 
           <section class="panel agenda-panel">

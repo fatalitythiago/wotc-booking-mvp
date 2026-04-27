@@ -1,6 +1,7 @@
 const state = {
   user: null,
   courts: [],
+  clients: [],
   bookings: [],
   demoAccounts: [],
   selectedBookingId: null,
@@ -27,6 +28,14 @@ const DEFAULT_BOOKING_TYPE = {
 
 // Add or rename slot menu options here without changing the grid renderer below.
 const SLOT_ACTIONS = [
+  {
+    id: "reservation",
+    label: "Reservation",
+    mode: "open-form",
+    slotType: "reservation",
+    slotLabel: "Reservation",
+    tone: "primary"
+  },
   {
     id: "open-time",
     label: "Open Time",
@@ -80,6 +89,8 @@ const bookingDateInput = document.getElementById("bookingDate");
 const playerNameInput = document.getElementById("playerName");
 const playerNameLabel = document.getElementById("playerNameLabel");
 const playerNameLabelText = document.getElementById("playerNameLabelText");
+const playerCombobox = document.getElementById("playerCombobox");
+const playerSuggestions = document.getElementById("playerSuggestions");
 const slotTypeLabel = document.getElementById("slotTypeLabel");
 const slotTypeSelect = document.getElementById("slotType");
 const courtSelect = document.getElementById("courtId");
@@ -90,8 +101,10 @@ const formMessage = document.getElementById("formMessage");
 const bookingPanelTitle = document.getElementById("bookingPanelTitle");
 const bookingPanelSubtitle = document.getElementById("bookingPanelSubtitle");
 const cancelBookingButton = document.getElementById("cancelBookingButton");
-const resetFormButton = document.getElementById("resetFormButton");
 const bookingPanel = document.querySelector(".booking-panel");
+const schedulerWorkspace = document.getElementById("schedulerWorkspace");
+const sidePanel = document.getElementById("sidePanel");
+const sidePanelToggle = document.getElementById("sidePanelToggle");
 const schedulerMenuButton = document.getElementById("schedulerMenuButton");
 const schedulerMenuPanel = document.getElementById("schedulerMenuPanel");
 
@@ -99,6 +112,17 @@ function getToday() {
   const now = new Date();
   const offsetDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
   return offsetDate.toISOString().split("T")[0];
+}
+
+function setSidePanelCollapsed(isCollapsed) {
+  schedulerWorkspace.classList.toggle("side-panel-collapsed", isCollapsed);
+  sidePanel.setAttribute("aria-hidden", String(isCollapsed));
+  sidePanelToggle.setAttribute("aria-expanded", String(!isCollapsed));
+  sidePanelToggle.setAttribute(
+    "aria-label",
+    isCollapsed ? "Open booking side panel" : "Close booking side panel"
+  );
+  sidePanelToggle.textContent = isCollapsed ? "‹" : "›";
 }
 
 function formatTimeLabel(time) {
@@ -151,6 +175,51 @@ function renderDemoAccounts() {
     });
     demoAccounts.appendChild(card);
   });
+}
+
+function hidePlayerSuggestions() {
+  playerSuggestions.classList.add("hidden");
+  playerNameInput.setAttribute("aria-expanded", "false");
+}
+
+function choosePlayer(client) {
+  playerNameInput.value = client.name;
+  hidePlayerSuggestions();
+}
+
+function renderPlayerSuggestions() {
+  if (state.user?.role !== "staff" || playerNameInput.disabled) {
+    hidePlayerSuggestions();
+    return;
+  }
+
+  const query = playerNameInput.value.trim().toLowerCase();
+  const matches = state.clients.filter((client) =>
+    client.name.toLowerCase().includes(query) ||
+    client.email.toLowerCase().includes(query)
+  );
+
+  playerSuggestions.innerHTML = "";
+
+  if (matches.length === 0) {
+    const emptyState = document.createElement("div");
+    emptyState.className = "player-suggestion-empty";
+    emptyState.textContent = "No matching clients";
+    playerSuggestions.appendChild(emptyState);
+  } else {
+    matches.forEach((client) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "player-suggestion";
+      button.setAttribute("role", "option");
+      button.innerHTML = `<strong>${client.name}</strong><span>${client.email}</span>`;
+      button.addEventListener("click", () => choosePlayer(client));
+      playerSuggestions.appendChild(button);
+    });
+  }
+
+  playerSuggestions.classList.remove("hidden");
+  playerNameInput.setAttribute("aria-expanded", "true");
 }
 
 function renderUser() {
@@ -228,11 +297,14 @@ function syncFormForSlotType(nextType) {
   if (state.user?.role === "staff") {
     playerNameInput.disabled = false;
     playerNameInput.required = true;
+    playerCombobox.classList.remove("is-disabled");
   } else {
     playerNameLabelText.textContent = "Player name";
     playerNameInput.value = state.user?.name || "";
     playerNameInput.disabled = true;
     playerNameInput.required = false;
+    playerCombobox.classList.add("is-disabled");
+    hidePlayerSuggestions();
   }
 }
 
@@ -273,7 +345,6 @@ function resetBookingForm() {
   bookingPanelTitle.textContent = "Create booking";
   bookingPanelSubtitle.textContent = "Choose an open time on the grid or fill out the form.";
   cancelBookingButton.classList.add("hidden");
-  resetFormButton.classList.remove("hidden");
   courtSelect.disabled = false;
   bookingDateInput.disabled = false;
   startTimeSelect.disabled = false;
@@ -307,6 +378,7 @@ function getBookingAtSlot(courtId, time) {
 }
 
 function prefillNewBooking(courtId, startTime, slotType = DEFAULT_BOOKING_TYPE.slotType) {
+  setSidePanelCollapsed(false);
   resetBookingForm();
   state.openSlotMenu = null;
   courtSelect.value = courtId;
@@ -325,6 +397,7 @@ function prefillNewBooking(courtId, startTime, slotType = DEFAULT_BOOKING_TYPE.s
 }
 
 function focusBookingPanel(message) {
+  setSidePanelCollapsed(false);
   setMessage(formMessage, message, "success");
   bookingPanel.scrollIntoView({ behavior: "smooth", block: "start" });
   if (state.user?.role === "staff") {
@@ -341,6 +414,10 @@ function setOpenSlotMenu(courtId, startTime) {
     ? null
     : { courtId, startTime };
 
+  setSchedulerMenuOpen(false);
+  if (nextMenu) {
+    prefillNewBooking(courtId, startTime);
+  }
   state.openSlotMenu = nextMenu;
   buildSchedulerGrid();
 }
@@ -387,6 +464,7 @@ async function handleSlotAction(action, courtId, startTime) {
 }
 
 function loadBookingIntoForm(booking) {
+  setSidePanelCollapsed(false);
   state.selectedBookingId = booking.id;
   state.openSlotMenu = null;
   bookingIdInput.value = booking.id;
@@ -409,6 +487,8 @@ function loadBookingIntoForm(booking) {
   syncFormForSlotType(slotTypeSelect.value);
   playerNameInput.value = booking.playerName || "";
   playerNameInput.disabled = !canEdit || state.user.role !== "staff";
+  playerCombobox.classList.toggle("is-disabled", playerNameInput.disabled);
+  hidePlayerSuggestions();
   slotTypeSelect.disabled = !canEdit || state.user.role !== "staff";
   courtSelect.disabled = !canEdit;
   bookingDateInput.disabled = !canEdit;
@@ -491,7 +571,11 @@ function buildSchedulerGrid() {
           const menu = document.createElement("div");
           menu.className = "slot-action-menu";
 
-          SLOT_ACTIONS.forEach((action) => {
+          const visibleActions = state.user?.role === "staff"
+            ? SLOT_ACTIONS
+            : SLOT_ACTIONS.filter((action) => action.slotType === DEFAULT_BOOKING_TYPE.slotType);
+
+          visibleActions.forEach((action) => {
             const actionButton = document.createElement("button");
             actionButton.type = "button";
             actionButton.className = `slot-action-button ${action.tone ? `tone-${action.tone}` : ""}`.trim();
@@ -548,6 +632,16 @@ async function loadCourts() {
   renderSlotTypeOptions();
 }
 
+async function loadClients() {
+  if (state.user?.role !== "staff") {
+    state.clients = state.user ? [{ id: state.user.id, name: state.user.name, email: state.user.email }] : [];
+    return;
+  }
+
+  const payload = await fetchJson("/api/clients");
+  state.clients = payload.clients;
+}
+
 async function loadBookings() {
   const payload = await fetchJson(`/api/bookings?date=${datePicker.value}`);
   state.bookings = payload.bookings;
@@ -557,6 +651,11 @@ async function loadBookings() {
 }
 
 function setSchedulerMenuOpen(isOpen) {
+  if (isOpen && state.openSlotMenu) {
+    state.openSlotMenu = null;
+    buildSchedulerGrid();
+  }
+
   schedulerMenuPanel.classList.toggle("hidden", !isOpen);
   schedulerMenuButton.setAttribute("aria-expanded", String(isOpen));
   schedulerMenuButton.setAttribute(
@@ -581,6 +680,8 @@ async function loadSession() {
   appScreen.classList.remove("hidden");
   renderUser();
   await loadCourts();
+  await loadClients();
+  setSidePanelCollapsed(true);
   resetBookingForm();
   await loadBookings();
 }
@@ -679,8 +780,17 @@ async function init() {
   loginForm.addEventListener("submit", handleLoginSubmit);
   logoutButton.addEventListener("click", handleLogout);
   bookingForm.addEventListener("submit", handleBookingSubmit);
+  sidePanelToggle.addEventListener("click", () => {
+    setSidePanelCollapsed(!schedulerWorkspace.classList.contains("side-panel-collapsed"));
+  });
   cancelBookingButton.addEventListener("click", handleCancelBooking);
-  resetFormButton.addEventListener("click", resetBookingForm);
+  playerNameInput.addEventListener("focus", renderPlayerSuggestions);
+  playerNameInput.addEventListener("input", renderPlayerSuggestions);
+  playerNameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      hidePlayerSuggestions();
+    }
+  });
   schedulerMenuButton.addEventListener("click", (event) => {
     event.stopPropagation();
     setSchedulerMenuOpen(schedulerMenuPanel.classList.contains("hidden"));
@@ -701,6 +811,10 @@ async function init() {
     if (!schedulerMenuPanel.classList.contains("hidden") &&
         !event.target.closest(".scheduler-menu")) {
       setSchedulerMenuOpen(false);
+    }
+
+    if (!event.target.closest(".player-combobox")) {
+      hidePlayerSuggestions();
     }
 
     if (!state.openSlotMenu) {
