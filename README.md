@@ -4,7 +4,7 @@ This is a simple CourtReserve-style internal scheduler with a basic login flow.
 
 ## What it can do right now
 
-- Show an eight-court scheduler grid
+- Show an 11-court tennis scheduler grid
 - Log in as either staff or a client
 - Let staff see full booking details
 - Let clients see their own bookings and reserved blocks on other courts

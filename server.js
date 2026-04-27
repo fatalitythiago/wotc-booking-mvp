@@ -8,16 +8,14 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const BOOKINGS_FILE = path.join(__dirname, "data", "bookings.json");
 const SESSION_COOKIE_NAME = "court_booking_session";
 
-const COURTS = [
-  { id: "court-1", name: "Indoor Court #1", surface: "Indoor" },
-  { id: "court-2", name: "Indoor Court #2", surface: "Indoor" },
-  { id: "court-3", name: "Indoor Court #3", surface: "Indoor" },
-  { id: "court-4", name: "Indoor Court #4", surface: "Indoor" },
-  { id: "court-5", name: "Indoor Court #5", surface: "Indoor" },
-  { id: "court-6", name: "Indoor Court #6", surface: "Indoor" },
-  { id: "court-7", name: "Indoor Court #7", surface: "Indoor" },
-  { id: "court-8", name: "Indoor Court #8", surface: "Indoor" }
-];
+const COURTS = Array.from({ length: 11 }, (_, index) => {
+  const courtNumber = index + 1;
+  return {
+    id: `court-${courtNumber}`,
+    name: `Tennis Court #${courtNumber}`,
+    surface: "Tennis"
+  };
+});
 
 const USERS = [
   {

@@ -73,7 +73,6 @@ const userName = document.getElementById("userName");
 const userMeta = document.getElementById("userMeta");
 const logoutButton = document.getElementById("logoutButton");
 const schedulerGrid = document.getElementById("schedulerGrid");
-const scheduleHint = document.getElementById("scheduleHint");
 const bookingAgenda = document.getElementById("bookingAgenda");
 const bookingForm = document.getElementById("bookingForm");
 const bookingIdInput = document.getElementById("bookingId");
@@ -93,6 +92,8 @@ const bookingPanelSubtitle = document.getElementById("bookingPanelSubtitle");
 const cancelBookingButton = document.getElementById("cancelBookingButton");
 const resetFormButton = document.getElementById("resetFormButton");
 const bookingPanel = document.querySelector(".booking-panel");
+const schedulerMenuButton = document.getElementById("schedulerMenuButton");
+const schedulerMenuPanel = document.getElementById("schedulerMenuPanel");
 
 function getToday() {
   const now = new Date();
@@ -553,9 +554,15 @@ async function loadBookings() {
   state.openSlotMenu = null;
   buildSchedulerGrid();
   renderAgenda();
-  scheduleHint.textContent = state.user.role === "staff"
-    ? `Staff can click Reserve to choose ${SLOT_ACTIONS.map((action) => action.label).join(" or ")}, or click any booking to edit it.`
-    : "Clients can click their own bookings to edit them and open slots to reserve.";
+}
+
+function setSchedulerMenuOpen(isOpen) {
+  schedulerMenuPanel.classList.toggle("hidden", !isOpen);
+  schedulerMenuButton.setAttribute("aria-expanded", String(isOpen));
+  schedulerMenuButton.setAttribute(
+    "aria-label",
+    isOpen ? "Close scheduler menu" : "Open scheduler menu"
+  );
 }
 
 async function loadSession() {
@@ -674,6 +681,10 @@ async function init() {
   bookingForm.addEventListener("submit", handleBookingSubmit);
   cancelBookingButton.addEventListener("click", handleCancelBooking);
   resetFormButton.addEventListener("click", resetBookingForm);
+  schedulerMenuButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setSchedulerMenuOpen(schedulerMenuPanel.classList.contains("hidden"));
+  });
   datePicker.addEventListener("change", async () => {
     syncBookingDateWithPicker();
     resetBookingForm();
@@ -687,6 +698,11 @@ async function init() {
     syncFormForSlotType(slotTypeSelect.value);
   });
   document.addEventListener("click", (event) => {
+    if (!schedulerMenuPanel.classList.contains("hidden") &&
+        !event.target.closest(".scheduler-menu")) {
+      setSchedulerMenuOpen(false);
+    }
+
     if (!state.openSlotMenu) {
       return;
     }

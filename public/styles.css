@@ -106,6 +106,10 @@ h1 {
   line-height: 0.95;
 }
 
+.topbar h1 {
+  font-size: clamp(2rem, 3vw, 3rem);
+}
+
 .hero-copy,
 .muted,
 .message,
@@ -248,7 +252,7 @@ button:hover {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(340px, 0.72fr);
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.34fr);
   gap: 20px;
 }
 
@@ -264,12 +268,58 @@ button:hover {
   margin-bottom: 16px;
 }
 
-.hint-pill {
-  padding: 10px 12px;
+.scheduler-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.scheduler-date {
+  width: min(300px, 100%);
+}
+
+.scheduler-menu {
+  position: relative;
+}
+
+.hamburger-button {
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+}
+
+.hamburger-button:hover {
+  background: var(--accent-soft);
+}
+
+.hamburger-button span {
+  display: block;
+  width: 20px;
+  height: 2px;
   border-radius: 999px;
-  background: rgba(223, 98, 41, 0.12);
-  color: var(--accent-orange-dark);
-  font-size: 0.92rem;
+  background: currentColor;
+}
+
+.scheduler-menu-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 4;
+  min-width: 210px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  color: var(--muted);
+  box-shadow: 0 18px 40px rgba(23, 50, 77, 0.14);
 }
 
 .scheduler-wrapper {
@@ -586,7 +636,8 @@ button:hover {
   }
 
   .topbar,
-  .topbar-actions {
+  .topbar-actions,
+  .scheduler-toolbar {
     flex-direction: column;
     align-items: stretch;
   }
