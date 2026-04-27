@@ -45,10 +45,14 @@
         </div>
         <div class="topbar-actions">
           <div class="user-chip">
-            <div>
-              <strong id="userName">User</strong>
-              <p id="userMeta" class="muted">Role</p>
-            </div>
+            <button
+              id="clientInfoShortcut"
+              class="client-info-shortcut"
+              type="button"
+              aria-label="Open client lookup"
+            >
+              <span class="client-info-name" id="userName">Client lookup</span>
+            </button>
             <button id="logoutButton" class="secondary-button" type="button">Log out</button>
           </div>
         </div>
@@ -59,7 +63,7 @@
           <div class="scheduler-toolbar">
             <div class="scheduler-date-menu">
               <label class="date-stack scheduler-date">
-                <span>Schedule date</span>
+                <span>Date</span>
                 <input type="date" id="datePicker" />
               </label>
               <div class="scheduler-menu">
@@ -76,16 +80,11 @@
                   <span></span>
                 </button>
                 <div id="schedulerMenuPanel" class="scheduler-menu-panel hidden" aria-label="Scheduler menu">
-                  <button type="button" class="scheduler-menu-action">Menu 1</button>
-                  <button type="button" class="scheduler-menu-action">Menu 2</button>
-                  <button type="button" class="scheduler-menu-action">Menu 3</button>
-                  <button type="button" class="scheduler-menu-action">Menu 4</button>
-                  <button type="button" class="scheduler-menu-action">Menu 5</button>
-                  <button type="button" class="scheduler-menu-action">Menu 6</button>
-                  <button type="button" class="scheduler-menu-action">Menu 7</button>
-                  <button type="button" class="scheduler-menu-action">Menu 8</button>
-                  <button type="button" class="scheduler-menu-action">Menu 9</button>
-                  <button type="button" class="scheduler-menu-action">Menu 10</button>
+                  <button type="button" class="scheduler-menu-action" data-panel-view="payments">Payments</button>
+                  <button type="button" class="scheduler-menu-action" data-panel-view="rules">Rules</button>
+                  <button type="button" class="scheduler-menu-action" data-panel-view="notes">Notes</button>
+                  <button type="button" class="scheduler-menu-action" data-panel-view="reports">Reports</button>
+                  <button type="button" class="scheduler-menu-action" data-panel-view="audit">Audit</button>
                 </div>
               </div>
             </div>
@@ -106,6 +105,8 @@
         </section>
 
         <aside id="sidePanel" class="side-panel" aria-hidden="true">
+          <section id="toolPanel" class="panel tool-panel hidden" aria-live="polite"></section>
+
           <section class="panel booking-panel">
             <div class="panel-head">
               <div>

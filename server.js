@@ -39,7 +39,40 @@ const CLIENTS = USERS
   .map((user) => ({
     id: user.id,
     name: user.name,
-    email: user.email
+    email: user.email,
+    phone: "(973) 555-0198",
+    address: {
+      street: "21 Clubhouse Drive",
+      city: "West Orange",
+      state: "NJ",
+      zip: "07052"
+    },
+    payments: [
+      {
+        id: "payment-1",
+        date: "2026-01-05",
+        description: "Winter season court package",
+        method: "Credit card",
+        amount: 420,
+        status: "Paid"
+      },
+      {
+        id: "payment-2",
+        date: "2026-02-14",
+        description: "Private lesson balance",
+        method: "ACH",
+        amount: 180,
+        status: "Paid"
+      },
+      {
+        id: "payment-3",
+        date: "2026-03-21",
+        description: "Guest fee and court time",
+        method: "Credit card",
+        amount: 96,
+        status: "Paid"
+      }
+    ]
   }));
 
 const sessions = new Map();

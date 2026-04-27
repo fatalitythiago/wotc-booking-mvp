@@ -5,7 +5,10 @@ const state = {
   bookings: [],
   demoAccounts: [],
   selectedBookingId: null,
-  openSlotMenu: null
+  openSlotMenu: null,
+  activePanelView: "booking",
+  clientSearchQuery: "",
+  selectedClientId: null
 };
 
 const timeOptions = [
@@ -70,6 +73,33 @@ const SLOT_ACTIONS = [
   }
 ];
 
+const PANEL_TOOLS = {
+  clients: {
+    title: "Clients",
+    subtitle: "Look up a client without leaving the scheduler."
+  },
+  payments: {
+    title: "Payments",
+    subtitle: "Track unpaid courts and balance checks from this side panel."
+  },
+  rules: {
+    title: "Rules",
+    subtitle: "Review booking rule warnings for the selected day."
+  },
+  notes: {
+    title: "Notes",
+    subtitle: "Keep staff notes close to the schedule."
+  },
+  reports: {
+    title: "Reports",
+    subtitle: "Compact daily summary for the current schedule date."
+  },
+  audit: {
+    title: "Audit",
+    subtitle: "Review every court booking for the selected date."
+  }
+};
+
 const loginScreen = document.getElementById("loginScreen");
 const appScreen = document.getElementById("appScreen");
 const loginForm = document.getElementById("loginForm");
@@ -79,7 +109,7 @@ const loginMessage = document.getElementById("loginMessage");
 const demoAccounts = document.getElementById("demoAccounts");
 const datePicker = document.getElementById("datePicker");
 const userName = document.getElementById("userName");
-const userMeta = document.getElementById("userMeta");
+const clientInfoShortcut = document.getElementById("clientInfoShortcut");
 const logoutButton = document.getElementById("logoutButton");
 const schedulerGrid = document.getElementById("schedulerGrid");
 const bookingAgenda = document.getElementById("bookingAgenda");
@@ -107,6 +137,7 @@ const sidePanel = document.getElementById("sidePanel");
 const sidePanelToggle = document.getElementById("sidePanelToggle");
 const schedulerMenuButton = document.getElementById("schedulerMenuButton");
 const schedulerMenuPanel = document.getElementById("schedulerMenuPanel");
+const toolPanel = document.getElementById("toolPanel");
 
 function getToday() {
   const now = new Date();
@@ -116,6 +147,7 @@ function getToday() {
 
 function setSidePanelCollapsed(isCollapsed) {
   schedulerWorkspace.classList.toggle("side-panel-collapsed", isCollapsed);
+  appScreen.classList.toggle("side-panel-collapsed", isCollapsed);
   sidePanel.setAttribute("aria-hidden", String(isCollapsed));
   sidePanelToggle.setAttribute("aria-expanded", String(!isCollapsed));
   sidePanelToggle.setAttribute(
@@ -140,6 +172,424 @@ function timeToMinutes(time) {
 function setMessage(target, text, type = "") {
   target.textContent = text;
   target.className = `message ${type}`.trim();
+}
+
+function setActivePanelView(view) {
+  state.activePanelView = view;
+  appScreen.classList.toggle("booking-mode", view === "booking");
+  bookingPanel.classList.toggle("hidden", view !== "booking");
+  renderToolPanel();
+  schedulerMenuPanel.querySelectorAll("[data-panel-view]").forEach((button) => {
+    const isActive = button.dataset.panelView === view;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+}
+
+function formatClientAddress(address) {
+  if (!address) {
+    return "Not available";
+  }
+
+  if (typeof address === "string") {
+    return address;
+  }
+
+  return [address.street, address.city, address.state, address.zip]
+    .filter(Boolean)
+    .join(", ") || "Not available";
+}
+
+function getSelectedClient() {
+  return state.clients.find((client) => client.id === state.selectedClientId) || null;
+}
+
+function renderClientInfoShortcut() {
+  if (state.user?.role !== "staff") {
+    clientInfoShortcut.classList.add("hidden");
+    return;
+  }
+
+  clientInfoShortcut.classList.remove("hidden");
+  const selectedClient = getSelectedClient();
+
+  if (!selectedClient) {
+    userName.textContent = "Client lookup";
+    return;
+  }
+
+  userName.textContent = selectedClient.name;
+}
+
+function renderToolPanelHeader(title, subtitle) {
+  const panelHead = document.createElement("div");
+  panelHead.className = "panel-head";
+
+  const textWrap = document.createElement("div");
+  const heading = document.createElement("h2");
+  const copy = document.createElement("p");
+
+  heading.textContent = title;
+  copy.className = "muted";
+  copy.textContent = subtitle;
+
+  textWrap.append(heading, copy);
+  panelHead.appendChild(textWrap);
+  toolPanel.appendChild(panelHead);
+}
+
+function renderInfoList(items) {
+  const list = document.createElement("div");
+  list.className = "tool-info-list";
+
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "tool-info-row";
+
+    const label = document.createElement("span");
+    label.textContent = item.label;
+
+    const value = document.createElement("strong");
+    value.textContent = item.value;
+
+    row.append(label, value);
+    list.appendChild(row);
+  });
+
+  return list;
+}
+
+function formatMoney(amount) {
+  return Number(amount || 0).toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD"
+  });
+}
+
+function getClientBookings(client) {
+  if (!client) {
+    return [];
+  }
+
+  return state.bookings.filter((booking) =>
+    booking.displayName === client.name ||
+    booking.playerName === client.name ||
+    booking.ownerEmail === client.email
+  );
+}
+
+function renderClientPayments(client) {
+  const payments = Array.isArray(client.payments) ? client.payments : [];
+  const heading = document.createElement("h3");
+  heading.textContent = "Payment history";
+  toolPanel.appendChild(heading);
+
+  if (payments.length === 0) {
+    const emptyState = document.createElement("p");
+    emptyState.className = "muted empty-state";
+    emptyState.textContent = "No payment history available yet.";
+    toolPanel.appendChild(emptyState);
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "payment-history-list";
+
+  payments.forEach((payment) => {
+    const row = document.createElement("div");
+    row.className = "payment-history-row";
+
+    const main = document.createElement("div");
+    const title = document.createElement("strong");
+    const meta = document.createElement("span");
+    title.textContent = payment.description;
+    meta.textContent = `${payment.date} · ${payment.method} · ${payment.status}`;
+    main.append(title, meta);
+
+    const amount = document.createElement("strong");
+    amount.textContent = formatMoney(payment.amount);
+
+    row.append(main, amount);
+    list.appendChild(row);
+  });
+
+  toolPanel.appendChild(list);
+}
+
+function renderClientsTool() {
+  const searchLabel = document.createElement("label");
+  searchLabel.className = "tool-search";
+  searchLabel.textContent = "Client search";
+
+  const searchInput = document.createElement("input");
+  searchInput.type = "search";
+  searchInput.placeholder = "Type a client name or email";
+  searchInput.value = state.clientSearchQuery;
+  searchInput.addEventListener("input", () => {
+    const cursorPosition = searchInput.selectionStart || searchInput.value.length;
+    state.clientSearchQuery = searchInput.value;
+    state.selectedClientId = null;
+    renderToolPanel();
+    const nextInput = toolPanel.querySelector(".tool-search input");
+    if (nextInput) {
+      nextInput.focus();
+      nextInput.setSelectionRange(cursorPosition, cursorPosition);
+    }
+  });
+  searchLabel.appendChild(searchInput);
+  toolPanel.appendChild(searchLabel);
+
+  const query = state.clientSearchQuery.trim().toLowerCase();
+  const matches = state.clients.filter((client) =>
+    !query ||
+    client.name.toLowerCase().includes(query) ||
+    client.email.toLowerCase().includes(query) ||
+    String(client.phone || "").toLowerCase().includes(query) ||
+    formatClientAddress(client.address).toLowerCase().includes(query)
+  );
+
+  const list = document.createElement("div");
+  list.className = "client-tool-list";
+
+  if (matches.length === 0) {
+    const emptyState = document.createElement("p");
+    emptyState.className = "muted empty-state";
+    emptyState.textContent = "No matching clients.";
+    list.appendChild(emptyState);
+  } else {
+    matches.forEach((client) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "client-tool-card";
+      if (state.selectedClientId === client.id) {
+        button.classList.add("is-selected");
+      }
+
+      const name = document.createElement("strong");
+      name.textContent = client.name;
+
+      const email = document.createElement("span");
+      email.textContent = client.email;
+
+      const phone = document.createElement("span");
+      phone.textContent = client.phone || "Phone not available";
+
+      const address = document.createElement("span");
+      address.textContent = formatClientAddress(client.address);
+
+      button.append(name, email, phone, address);
+      button.addEventListener("click", () => {
+        state.selectedClientId = client.id;
+        renderClientInfoShortcut();
+        renderToolPanel();
+      });
+      list.appendChild(button);
+    });
+  }
+
+  toolPanel.appendChild(list);
+
+  const selectedClient = state.clients.find((client) => client.id === state.selectedClientId);
+  if (!selectedClient) {
+    return;
+  }
+
+  const clientBookings = getClientBookings(selectedClient);
+  const detail = document.createElement("div");
+  detail.className = "tool-detail-box";
+
+  const title = document.createElement("h3");
+  title.textContent = selectedClient.name;
+
+  const details = renderInfoList([
+    { label: "Email", value: selectedClient.email },
+    { label: "Phone", value: selectedClient.phone || "Not available" },
+    { label: "Home address", value: formatClientAddress(selectedClient.address) },
+    { label: "Bookings on date", value: String(clientBookings.length) },
+    { label: "Status", value: "Demo client" }
+  ]);
+
+  detail.append(title, details);
+  toolPanel.appendChild(detail);
+  renderClientPayments(selectedClient);
+}
+
+function renderPaymentsTool() {
+  const activeBookings = state.bookings.filter((booking) => booking.status === "active");
+  const reservations = activeBookings.filter((booking) => booking.slotType === "reservation");
+  const managedSlots = activeBookings.filter((booking) => booking.slotType !== "reservation");
+
+  toolPanel.appendChild(renderInfoList([
+    { label: "Active reservations", value: String(reservations.length) },
+    { label: "Managed slots", value: String(managedSlots.length) },
+    { label: "Unpaid courts", value: "Not connected yet" }
+  ]));
+
+  const note = document.createElement("p");
+  note.className = "tool-note";
+  note.textContent = "This is the future place for unpaid court warnings, balance checks, and payment follow-up.";
+  toolPanel.appendChild(note);
+}
+
+function renderRulesTool() {
+  const activeBookings = state.bookings.filter((booking) => booking.status === "active");
+  const longBookings = activeBookings.filter((booking) =>
+    timeToMinutes(booking.endTime) - timeToMinutes(booking.startTime) > 90
+  );
+  const managedSlots = activeBookings.filter((booking) => booking.slotType !== "reservation");
+
+  toolPanel.appendChild(renderInfoList([
+    { label: "Warnings today", value: String(longBookings.length) },
+    { label: "Managed blocks", value: String(managedSlots.length) },
+    { label: "Rule engine", value: "Placeholder" }
+  ]));
+
+  const list = document.createElement("div");
+  list.className = "tool-alert-list";
+
+  if (longBookings.length === 0) {
+    const emptyState = document.createElement("p");
+    emptyState.className = "muted empty-state";
+    emptyState.textContent = "No long-booking warnings for this date.";
+    list.appendChild(emptyState);
+  } else {
+    longBookings.forEach((booking) => {
+      const warning = document.createElement("div");
+      warning.className = "tool-alert";
+      warning.textContent = `${booking.displayName} is booked from ${formatTimeLabel(booking.startTime)} to ${formatTimeLabel(booking.endTime)}.`;
+      list.appendChild(warning);
+    });
+  }
+
+  toolPanel.appendChild(list);
+}
+
+function renderNotesTool() {
+  const bookingNotes = state.bookings
+    .filter((booking) => booking.notes)
+    .slice(0, 5);
+
+  const note = document.createElement("p");
+  note.className = "tool-note";
+  note.textContent = "Staff notes will live here later. For now, recent booking notes are shown below.";
+  toolPanel.appendChild(note);
+
+  const list = document.createElement("div");
+  list.className = "tool-alert-list";
+
+  if (bookingNotes.length === 0) {
+    const emptyState = document.createElement("p");
+    emptyState.className = "muted empty-state";
+    emptyState.textContent = "No booking notes for this date.";
+    list.appendChild(emptyState);
+  } else {
+    bookingNotes.forEach((booking) => {
+      const noteCard = document.createElement("div");
+      noteCard.className = "tool-alert";
+      noteCard.textContent = `${booking.displayName}: ${booking.notes}`;
+      list.appendChild(noteCard);
+    });
+  }
+
+  toolPanel.appendChild(list);
+}
+
+function renderReportsTool() {
+  const activeBookings = state.bookings.filter((booking) => booking.status === "active");
+  const cancelledBookings = state.bookings.filter((booking) => booking.status === "cancelled");
+  const reservations = activeBookings.filter((booking) => booking.slotType === "reservation");
+  const openTime = activeBookings.filter((booking) => booking.slotType === "open-time");
+
+  toolPanel.appendChild(renderInfoList([
+    { label: "Total items", value: String(state.bookings.length) },
+    { label: "Active reservations", value: String(reservations.length) },
+    { label: "Open time blocks", value: String(openTime.length) },
+    { label: "Cancelled", value: String(cancelledBookings.length) }
+  ]));
+}
+
+function renderAuditTool() {
+  if (state.bookings.length === 0) {
+    const emptyState = document.createElement("p");
+    emptyState.className = "muted empty-state";
+    emptyState.textContent = "No bookings yet for this date.";
+    toolPanel.appendChild(emptyState);
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "audit-list";
+
+  [...state.bookings]
+    .sort((first, second) =>
+      first.startTime.localeCompare(second.startTime) ||
+      first.courtId.localeCompare(second.courtId)
+    )
+    .forEach((booking) => {
+      const court = state.courts.find((item) => item.id === booking.courtId);
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "audit-row";
+
+      const heading = document.createElement("div");
+      heading.className = "audit-row-heading";
+
+      const name = document.createElement("strong");
+      name.textContent = booking.displayName || booking.playerName || "Unknown client";
+
+      const status = document.createElement("span");
+      status.className = `status-pill ${booking.slotType !== "reservation" ? `managed-slot ${getSlotTypeClassName(booking.slotType)}` : booking.status}`;
+      status.textContent = booking.slotType !== "reservation"
+        ? booking.slotLabel.toLowerCase()
+        : booking.status;
+
+      heading.append(name, status);
+
+      const details = document.createElement("span");
+      details.textContent = `${court ? court.name : booking.courtId} · ${formatTimeLabel(booking.startTime)} - ${formatTimeLabel(booking.endTime)}`;
+
+      const notes = document.createElement("span");
+      notes.textContent = booking.notes || "No notes";
+
+      row.append(heading, details, notes);
+      row.addEventListener("click", () => loadBookingIntoForm(booking));
+      list.appendChild(row);
+    });
+
+  toolPanel.appendChild(list);
+}
+
+function renderToolPanel() {
+  toolPanel.innerHTML = "";
+  bookingPanel.classList.toggle("hidden", state.activePanelView !== "booking");
+
+  if (state.activePanelView === "booking") {
+    toolPanel.classList.add("hidden");
+    return;
+  }
+
+  const tool = PANEL_TOOLS[state.activePanelView];
+  if (!tool) {
+    toolPanel.classList.add("hidden");
+    return;
+  }
+
+  toolPanel.classList.remove("hidden");
+  renderToolPanelHeader(tool.title, tool.subtitle);
+
+  if (state.activePanelView === "clients") {
+    renderClientsTool();
+  } else if (state.activePanelView === "payments") {
+    renderPaymentsTool();
+  } else if (state.activePanelView === "rules") {
+    renderRulesTool();
+  } else if (state.activePanelView === "notes") {
+    renderNotesTool();
+  } else if (state.activePanelView === "reports") {
+    renderReportsTool();
+  } else if (state.activePanelView === "audit") {
+    renderAuditTool();
+  }
 }
 
 async function fetchJson(url, options = {}) {
@@ -223,8 +673,11 @@ function renderPlayerSuggestions() {
 }
 
 function renderUser() {
-  userName.textContent = state.user.name;
-  userMeta.textContent = `${state.user.role === "staff" ? "Staff view" : "Client view"} · ${state.user.email}`;
+  if (state.user.role === "staff") {
+    renderClientInfoShortcut();
+  } else {
+    clientInfoShortcut.classList.add("hidden");
+  }
 
   if (state.user.role === "staff") {
     slotTypeLabel.classList.remove("hidden");
@@ -342,6 +795,7 @@ function resetBookingForm() {
   bookingIdInput.value = "";
   state.selectedBookingId = null;
   state.openSlotMenu = null;
+  setActivePanelView("booking");
   bookingPanelTitle.textContent = "Create booking";
   bookingPanelSubtitle.textContent = "Choose an open time on the grid or fill out the form.";
   cancelBookingButton.classList.add("hidden");
@@ -380,6 +834,7 @@ function getBookingAtSlot(courtId, time) {
 function prefillNewBooking(courtId, startTime, slotType = DEFAULT_BOOKING_TYPE.slotType) {
   setSidePanelCollapsed(false);
   resetBookingForm();
+  setActivePanelView("booking");
   state.openSlotMenu = null;
   courtSelect.value = courtId;
   bookingDateInput.value = datePicker.value;
@@ -465,6 +920,7 @@ async function handleSlotAction(action, courtId, startTime) {
 
 function loadBookingIntoForm(booking) {
   setSidePanelCollapsed(false);
+  setActivePanelView("booking");
   state.selectedBookingId = booking.id;
   state.openSlotMenu = null;
   bookingIdInput.value = booking.id;
@@ -635,11 +1091,13 @@ async function loadCourts() {
 async function loadClients() {
   if (state.user?.role !== "staff") {
     state.clients = state.user ? [{ id: state.user.id, name: state.user.name, email: state.user.email }] : [];
+    renderClientInfoShortcut();
     return;
   }
 
   const payload = await fetchJson("/api/clients");
   state.clients = payload.clients;
+  renderClientInfoShortcut();
 }
 
 async function loadBookings() {
@@ -648,6 +1106,7 @@ async function loadBookings() {
   state.openSlotMenu = null;
   buildSchedulerGrid();
   renderAgenda();
+  renderToolPanel();
 }
 
 function setSchedulerMenuOpen(isOpen) {
@@ -662,6 +1121,18 @@ function setSchedulerMenuOpen(isOpen) {
     "aria-label",
     isOpen ? "Close scheduler menu" : "Open scheduler menu"
   );
+}
+
+function handleSchedulerToolClick(view) {
+  if (!PANEL_TOOLS[view]) {
+    return;
+  }
+
+  state.openSlotMenu = null;
+  setActivePanelView(view);
+  setSidePanelCollapsed(false);
+  setSchedulerMenuOpen(false);
+  buildSchedulerGrid();
 }
 
 async function loadSession() {
@@ -781,7 +1252,11 @@ async function init() {
   logoutButton.addEventListener("click", handleLogout);
   bookingForm.addEventListener("submit", handleBookingSubmit);
   sidePanelToggle.addEventListener("click", () => {
-    setSidePanelCollapsed(!schedulerWorkspace.classList.contains("side-panel-collapsed"));
+    const isCollapsed = schedulerWorkspace.classList.contains("side-panel-collapsed");
+    if (isCollapsed && state.user?.role === "staff" && state.activePanelView === "booking") {
+      setActivePanelView("clients");
+    }
+    setSidePanelCollapsed(!isCollapsed);
   });
   cancelBookingButton.addEventListener("click", handleCancelBooking);
   playerNameInput.addEventListener("focus", renderPlayerSuggestions);
@@ -794,6 +1269,20 @@ async function init() {
   schedulerMenuButton.addEventListener("click", (event) => {
     event.stopPropagation();
     setSchedulerMenuOpen(schedulerMenuPanel.classList.contains("hidden"));
+  });
+  schedulerMenuPanel.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-panel-view]");
+    if (!button) {
+      return;
+    }
+
+    event.stopPropagation();
+    handleSchedulerToolClick(button.dataset.panelView);
+  });
+  clientInfoShortcut.addEventListener("click", () => {
+    if (state.user?.role === "staff") {
+      handleSchedulerToolClick("clients");
+    }
   });
   datePicker.addEventListener("change", async () => {
     syncBookingDateWithPicker();
