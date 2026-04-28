@@ -11,6 +11,9 @@ This is a simple CourtReserve-style internal scheduler with a basic login flow.
 - Create, edit, and cancel bookings
 - Prevent double-booking on the same court and time
 - Save bookings locally in `data/bookings.json`
+- Track simple payment and confirmation status on bookings
+- Create staff-only managed court blocks and weekly recurring reservations
+- Review daily Payments, Rules, Notes, Reports, and Audit side-panel views
 
 ## Demo accounts
 
@@ -22,6 +25,8 @@ This is a simple CourtReserve-style internal scheduler with a basic login flow.
 This starter avoids outside libraries so it can run with the tools already available in this workspace.
 
 - `server.js` runs the app, handles login, and saves data
+- `data/users.json` stores the demo staff and client login accounts
+- `data/clients.json` stores demo client profile, membership, note, and payment seed data
 - `public/index.html` contains the login screen and scheduler layout
 - `public/styles.css` styles the scheduler and side panels
 - `public/script.js` handles login, bookings, and scheduler interactions

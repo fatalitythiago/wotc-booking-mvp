@@ -900,6 +900,20 @@ button:hover {
   background: var(--accent-soft);
 }
 
+.audit-row.is-cancelled {
+  border-color: rgba(181, 69, 53, 0.2);
+  background: #fff8f7;
+}
+
+.audit-row.managed-slot {
+  border-color: rgba(223, 98, 41, 0.2);
+  background: #fffaf8;
+}
+
+.managed-alert {
+  background: #fffaf8;
+}
+
 .audit-row-heading {
   display: flex;
   align-items: center;
@@ -946,6 +960,25 @@ button:hover {
 
 .form-actions {
   grid-template-columns: 1fr;
+}
+
+.staff-booking-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.checkbox-row {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbfdff;
+}
+
+.checkbox-row input {
+  width: auto;
 }
 
 .agenda-list {

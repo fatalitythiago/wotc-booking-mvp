@@ -7,7 +7,10 @@ const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const BOOKINGS_FILE = path.join(__dirname, "data", "bookings.json");
 const CLIENTS_FILE = path.join(__dirname, "data", "clients.json");
+const USERS_FILE = path.join(__dirname, "data", "users.json");
 const SESSION_COOKIE_NAME = "court_booking_session";
+const VALID_PAYMENT_STATUSES = new Set(["paid", "unpaid", "not-required"]);
+const VALID_CONFIRMATION_STATUSES = new Set(["not-reviewed", "reviewed", "not-needed"]);
 
 const COURTS = Array.from({ length: 11 }, (_, index) => {
   const courtNumber = index + 1;
@@ -17,23 +20,6 @@ const COURTS = Array.from({ length: 11 }, (_, index) => {
     surface: "Tennis"
   };
 });
-
-const USERS = [
-  {
-    id: "staff-1",
-    role: "staff",
-    name: "Front Desk",
-    email: "staff@wotc.local",
-    password: "demo123"
-  },
-  {
-    id: "client-1",
-    role: "client",
-    name: "Thiago Member",
-    email: "client@wotc.local",
-    password: "demo123"
-  }
-];
 
 const sessions = new Map();
 
@@ -82,8 +68,25 @@ function readClients() {
   return readJsonArray(CLIENTS_FILE, "clients");
 }
 
-function writeClients(clients) {
-  return writeJsonArray(CLIENTS_FILE, "clients", clients);
+function readUsers() {
+  const users = readJsonArray(USERS_FILE, "users");
+  const validUsers = users.filter((user) =>
+    user &&
+    typeof user.id === "string" &&
+    typeof user.role === "string" &&
+    typeof user.email === "string" &&
+    typeof user.password === "string"
+  );
+
+  if (users.length !== validUsers.length) {
+    console.error("[ERROR] Some users in data/users.json are missing id, role, email, or password.");
+  }
+
+  return validUsers;
+}
+
+function findUserById(userId) {
+  return readUsers().find((user) => user.id === userId) || null;
 }
 
 function findClientById(clientId) {
@@ -116,7 +119,7 @@ function getSessionUser(request) {
     return null;
   }
 
-  return USERS.find((user) => user.id === session.userId) || null;
+  return findUserById(session.userId);
 }
 
 function sendJson(response, statusCode, payload, extraHeaders = {}) {
@@ -186,6 +189,25 @@ function normalizeUser(user) {
   };
 }
 
+function isStaff(user) {
+  return user && user.role === "staff";
+}
+
+function normalizeChoice(value, allowed, fallback) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return allowed.has(normalized) ? normalized : fallback;
+}
+
+function addDays(dateText, days) {
+  const date = new Date(`${dateText}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().split("T")[0];
+}
+
+function getBookingOwnerClientId(booking) {
+  return booking.clientId || booking.userId || null;
+}
+
 function requireAuth(request, response) {
   const user = getSessionUser(request);
   if (!user) {
@@ -215,17 +237,73 @@ function overlapsExistingBooking(existingBooking, proposedBooking) {
     proposedBooking.endTime > existingBooking.startTime;
 }
 
+function canViewBookingDetails(booking, viewer) {
+  if (!viewer) {
+    return false;
+  }
+
+  return isStaff(viewer) ||
+    booking.userId === viewer.id ||
+    booking.clientId === viewer.id ||
+    booking.ownerEmail === viewer.email;
+}
+
+function normalizeBookingPayload(payload, user, existingBooking = null) {
+  const requestedSlotType = typeof payload.slotType === "string" && payload.slotType.trim()
+    ? payload.slotType.trim().toLowerCase()
+    : existingBooking?.slotType || "reservation";
+  const slotType = isStaff(user) ? requestedSlotType : "reservation";
+  const slotLabel = typeof payload.slotLabel === "string" && payload.slotLabel.trim()
+    ? payload.slotLabel.trim()
+    : slotType === "reservation"
+      ? "Reservation"
+      : "Unavailable";
+  const selectedClient = isStaff(user) && slotType === "reservation"
+    ? findClientById(payload.clientId)
+    : null;
+  const playerName = selectedClient
+    ? selectedClient.name
+    : isStaff(user)
+    ? String(payload.playerName || existingBooking?.playerName || "").trim()
+    : user.name;
+
+  return {
+    date: payload.date || existingBooking?.date,
+    courtId: payload.courtId || existingBooking?.courtId,
+    playerName,
+    startTime: payload.startTime || existingBooking?.startTime,
+    endTime: payload.endTime || existingBooking?.endTime,
+    notes: typeof payload.notes === "string" ? payload.notes.trim() : existingBooking?.notes || "",
+    slotType,
+    slotLabel,
+    selectedClient,
+    paymentStatus: normalizeChoice(
+      payload.paymentStatus || existingBooking?.paymentStatus,
+      VALID_PAYMENT_STATUSES,
+      slotType === "reservation" ? "unpaid" : "not-required"
+    ),
+    confirmationStatus: normalizeChoice(
+      payload.confirmationStatus || existingBooking?.confirmationStatus,
+      VALID_CONFIRMATION_STATUSES,
+      slotType === "reservation" ? "not-reviewed" : "not-needed"
+    ),
+    confirmationText: typeof payload.confirmationText === "string"
+      ? payload.confirmationText.trim()
+      : existingBooking?.confirmationText || ""
+  };
+}
+
 function sanitizeBookingForViewer(booking, viewer) {
   const isOwner = viewer && (
     booking.userId === viewer.id ||
-    booking.clientId === viewer.id ||
+    getBookingOwnerClientId(booking) === viewer.id ||
     booking.ownerEmail === viewer.email
   );
   const slotType = booking.slotType || "reservation";
   const slotLabel = booking.slotLabel ||
     (slotType !== "reservation" ? booking.playerName || "Unavailable" : "Reserved");
   const isManagedSlot = slotType !== "reservation";
-  const canViewDetails = viewer && (viewer.role === "staff" || isOwner);
+  const canViewDetails = canViewBookingDetails(booking, viewer);
   const displayName = isManagedSlot
     ? booking.playerName || slotLabel
     : canViewDetails
@@ -246,6 +324,12 @@ function sanitizeBookingForViewer(booking, viewer) {
     slotLabel,
     createdAt: booking.createdAt,
     cancelledAt: booking.cancelledAt || null,
+    cancelledBy: canViewDetails ? booking.cancelledBy || null : null,
+    cancelReason: canViewDetails ? booking.cancelReason || "" : "",
+    paymentStatus: canViewDetails ? booking.paymentStatus || (isManagedSlot ? "not-required" : "unpaid") : null,
+    confirmationStatus: canViewDetails ? booking.confirmationStatus || (isManagedSlot ? "not-needed" : "not-reviewed") : null,
+    confirmationText: canViewDetails ? booking.confirmationText || "" : "",
+    recurrenceId: canViewDetails ? booking.recurrenceId || null : null,
     roleVisibility: canViewDetails ? "full" : "limited",
     isOwner,
     clientId: canViewDetails ? booking.clientId || null : null,
@@ -260,9 +344,10 @@ function findBookingById(bookings, bookingId) {
 
 function handleGetSession(request, response) {
   const user = getSessionUser(request);
+  const users = readUsers();
   sendJson(response, 200, {
     user: user ? normalizeUser(user) : null,
-    demoAccounts: USERS.map((item) => ({
+    demoAccounts: users.map((item) => ({
       role: item.role,
       name: item.name,
       email: item.email,
@@ -274,7 +359,7 @@ function handleGetSession(request, response) {
 async function handleLogin(request, response) {
   try {
     const payload = await parseBody(request);
-    const user = USERS.find((candidate) =>
+    const user = readUsers().find((candidate) =>
       candidate.email.toLowerCase() === String(payload.email || "").trim().toLowerCase() &&
       hashPassword(candidate.password) === hashPassword(String(payload.password || ""))
     );
@@ -335,7 +420,15 @@ function handleGetClients(request, response) {
     return;
   }
 
-  sendJson(response, 200, { clients: readClients() });
+  const clients = readClients();
+  if (isStaff(user)) {
+    sendJson(response, 200, { clients });
+    return;
+  }
+
+  sendJson(response, 200, {
+    clients: clients.filter((client) => client.id === user.id || client.email === user.email)
+  });
 }
 
 function handleGetBookings(request, response) {
@@ -348,6 +441,7 @@ function handleGetBookings(request, response) {
   const requestedDate = url.searchParams.get("date");
   const bookings = readBookings()
     .filter((booking) => !requestedDate || booking.date === requestedDate)
+    .filter((booking) => isStaff(user) || canViewBookingDetails(booking, user))
     .sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
       if (a.startTime !== b.startTime) return a.startTime.localeCompare(b.startTime);
@@ -386,48 +480,41 @@ async function handleCreateBooking(request, response) {
       return;
     }
 
-    const slotType = typeof payload.slotType === "string" && payload.slotType.trim()
-      ? payload.slotType.trim().toLowerCase()
-      : "reservation";
-    const slotLabel = typeof payload.slotLabel === "string" && payload.slotLabel.trim()
-      ? payload.slotLabel.trim()
-      : slotType === "reservation"
-        ? "Reserved"
-        : "Unavailable";
-    const selectedClient = user.role === "staff" && slotType === "reservation"
-      ? findClientById(payload.clientId)
-      : null;
-    const playerName = selectedClient
-      ? selectedClient.name
-      : user.role === "staff"
-      ? String(payload.playerName || "").trim()
-      : user.name;
+    const requestedSlotType = String(payload.slotType || "reservation").trim().toLowerCase();
+    if (!isStaff(user) && requestedSlotType !== "reservation") {
+      sendJson(response, 403, { error: "Only staff can create managed court blocks." });
+      return;
+    }
+    const normalized = normalizeBookingPayload(payload, user);
 
-    if (!playerName) {
+    if (!normalized.playerName) {
       sendJson(response, 400, { error: "Player name is required." });
       return;
     }
 
     const proposedBooking = {
       id: randomUUID(),
-      date: payload.date,
-      courtId: payload.courtId,
-      playerName,
-      startTime: payload.startTime,
-      endTime: payload.endTime,
+      date: normalized.date,
+      courtId: normalized.courtId,
+      playerName: normalized.playerName,
+      startTime: normalized.startTime,
+      endTime: normalized.endTime,
       notes: String(payload.notes || "").trim(),
       status: "active",
-      slotType,
-      slotLabel,
+      slotType: normalized.slotType,
+      slotLabel: normalized.slotLabel,
+      paymentStatus: normalized.paymentStatus,
+      confirmationStatus: normalized.confirmationStatus,
+      confirmationText: normalized.confirmationText,
       createdAt: new Date().toISOString(),
       userId: user.id,
       ownerEmail: user.email,
       createdByRole: user.role
     };
 
-    if (selectedClient) {
-      proposedBooking.clientId = selectedClient.id;
-      proposedBooking.ownerEmail = selectedClient.email;
+    if (normalized.selectedClient) {
+      proposedBooking.clientId = normalized.selectedClient.id;
+      proposedBooking.ownerEmail = normalized.selectedClient.email;
     }
 
     const bookings = readBookings();
@@ -456,6 +543,122 @@ async function handleCreateBooking(request, response) {
   }
 }
 
+async function handleCreateRecurringBookings(request, response) {
+  const user = requireAuth(request, response);
+  if (!user) {
+    return;
+  }
+
+  if (!isStaff(user)) {
+    sendJson(response, 403, { error: "Only staff can create recurring reservations." });
+    return;
+  }
+
+  try {
+    const payload = await parseBody(request);
+    const weeks = Math.max(1, Math.min(Number(payload.weeks || 1), 26));
+    const normalized = normalizeBookingPayload({
+      ...payload,
+      slotType: "reservation",
+      slotLabel: "Reservation"
+    }, user);
+    const requiredFields = ["date", "courtId", "startTime", "endTime"];
+    const missingField = requiredFields.find((field) => !normalized[field]);
+
+    if (missingField) {
+      sendJson(response, 400, { error: `Missing required field: ${missingField}` });
+      return;
+    }
+
+    if (!normalized.playerName) {
+      sendJson(response, 400, { error: "Player name is required." });
+      return;
+    }
+
+    if (!COURTS.some((court) => court.id === normalized.courtId)) {
+      sendJson(response, 400, { error: "Selected court does not exist." });
+      return;
+    }
+
+    if (!isTimeRangeValid(normalized.startTime, normalized.endTime)) {
+      sendJson(response, 400, {
+        error: "Time range is invalid. Use HH:MM and make sure end is after start."
+      });
+      return;
+    }
+
+    const recurrenceId = randomUUID();
+    const now = new Date().toISOString();
+    const bookings = readBookings();
+    const created = [];
+    const conflicts = [];
+
+    for (let index = 0; index < weeks; index += 1) {
+      const proposedBooking = {
+        id: randomUUID(),
+        date: addDays(normalized.date, index * 7),
+        courtId: normalized.courtId,
+        playerName: normalized.playerName,
+        startTime: normalized.startTime,
+        endTime: normalized.endTime,
+        notes: normalized.notes,
+        status: "active",
+        slotType: "reservation",
+        slotLabel: "Reservation",
+        paymentStatus: normalized.paymentStatus,
+        confirmationStatus: normalized.confirmationStatus,
+        confirmationText: normalized.confirmationText,
+        recurrenceId,
+        createdAt: now,
+        userId: user.id,
+        ownerEmail: normalized.selectedClient ? normalized.selectedClient.email : user.email,
+        createdByRole: user.role
+      };
+
+      if (normalized.selectedClient) {
+        proposedBooking.clientId = normalized.selectedClient.id;
+      }
+
+      const conflictingBooking = bookings.find((booking) => overlapsExistingBooking(booking, proposedBooking));
+      if (conflictingBooking) {
+        conflicts.push({
+          date: proposedBooking.date,
+          courtId: proposedBooking.courtId,
+          startTime: proposedBooking.startTime,
+          endTime: proposedBooking.endTime
+        });
+        continue;
+      }
+
+      bookings.push(proposedBooking);
+      created.push(proposedBooking);
+    }
+
+    if (created.length === 0) {
+      sendJson(response, 409, {
+        error: "No recurring bookings were created because every date had a conflict.",
+        conflicts
+      });
+      return;
+    }
+
+    const writeResult = writeBookings(bookings);
+    if (!writeResult.ok) {
+      sendJson(response, 500, {
+        error: `Unable to save recurring bookings right now: ${writeResult.error.message}`
+      });
+      return;
+    }
+
+    sendJson(response, 201, {
+      bookings: created.map((booking) => sanitizeBookingForViewer(booking, user)),
+      conflicts
+    });
+  } catch (error) {
+    sendJson(response, 400, { error: error.message });
+  }
+}
+
 async function handleUpdateBooking(request, response, bookingId) {
   const user = requireAuth(request, response);
   if (!user) {
@@ -472,7 +675,7 @@ async function handleUpdateBooking(request, response, bookingId) {
       return;
     }
 
-    const userCanEdit = user.role === "staff" || booking.userId === user.id;
+    const userCanEdit = isStaff(user) || (booking.userId === user.id && (booking.slotType || "reservation") === "reservation");
     if (!userCanEdit) {
       sendJson(response, 403, { error: "You do not have permission to edit this booking." });
       return;
@@ -481,39 +684,37 @@ async function handleUpdateBooking(request, response, bookingId) {
     if (payload.status === "cancelled") {
       booking.status = "cancelled";
       booking.cancelledAt = new Date().toISOString();
+      booking.cancelledBy = user.name;
+      booking.cancelReason = String(payload.cancelReason || "").trim();
     } else {
-      const updatedSlotType = typeof payload.slotType === "string" && payload.slotType.trim()
-        ? payload.slotType.trim().toLowerCase()
-        : (booking.slotType || "reservation");
-      const updatedSlotLabel = typeof payload.slotLabel === "string" && payload.slotLabel.trim()
-        ? payload.slotLabel.trim()
-        : (booking.slotLabel || (updatedSlotType === "reservation" ? "Reserved" : "Unavailable"));
-      const selectedClient = user.role === "staff" && updatedSlotType === "reservation"
-        ? findClientById(payload.clientId)
-        : null;
+      const requestedSlotType = String(payload.slotType || booking.slotType || "reservation").trim().toLowerCase();
+      if (!isStaff(user) && requestedSlotType !== "reservation") {
+        sendJson(response, 403, { error: "Only staff can manage court blocks." });
+        return;
+      }
+      const normalized = normalizeBookingPayload(payload, user, booking);
       const updatedBooking = {
         ...booking,
-        date: payload.date || booking.date,
-        courtId: payload.courtId || booking.courtId,
-        startTime: payload.startTime || booking.startTime,
-        endTime: payload.endTime || booking.endTime,
-        notes: typeof payload.notes === "string" ? payload.notes.trim() : booking.notes,
-        playerName: selectedClient
-          ? selectedClient.name
-          : user.role === "staff" && typeof payload.playerName === "string"
-          ? String(payload.playerName).trim()
-          : booking.playerName,
-        slotType: updatedSlotType,
-        slotLabel: updatedSlotLabel,
+        date: normalized.date,
+        courtId: normalized.courtId,
+        startTime: normalized.startTime,
+        endTime: normalized.endTime,
+        notes: normalized.notes,
+        playerName: normalized.playerName,
+        slotType: normalized.slotType,
+        slotLabel: normalized.slotLabel,
+        paymentStatus: isStaff(user) ? normalized.paymentStatus : booking.paymentStatus,
+        confirmationStatus: isStaff(user) ? normalized.confirmationStatus : booking.confirmationStatus,
+        confirmationText: isStaff(user) ? normalized.confirmationText : booking.confirmationText,
         status: payload.status || booking.status
       };
 
-      if (selectedClient) {
-        updatedBooking.clientId = selectedClient.id;
-        updatedBooking.ownerEmail = selectedClient.email;
-      } else if (user.role === "staff" && updatedSlotType === "reservation" && "clientId" in payload) {
+      if (normalized.selectedClient) {
+        updatedBooking.clientId = normalized.selectedClient.id;
+        updatedBooking.ownerEmail = normalized.selectedClient.email;
+      } else if (isStaff(user) && normalized.slotType === "reservation" && "clientId" in payload) {
         delete updatedBooking.clientId;
-      } else if (updatedSlotType !== "reservation") {
+      } else if (normalized.slotType !== "reservation") {
         delete updatedBooking.clientId;
       }
 
@@ -551,6 +752,8 @@ async function handleUpdateBooking(request, response, bookingId) {
       }
       if (booking.status !== "cancelled") {
         delete booking.cancelledAt;
+        delete booking.cancelledBy;
+        delete booking.cancelReason;
       }
     }
 
@@ -606,6 +809,11 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "POST" && url.pathname === "/api/recurring-bookings") {
+    await handleCreateRecurringBookings(request, response);
+    return;
+  }
+
   if (request.method === "PATCH" && url.pathname.startsWith("/api/bookings/")) {
     const bookingId = url.pathname.split("/").pop();
     await handleUpdateBooking(request, response, bookingId);
@@ -622,6 +830,15 @@ const server = http.createServer(async (request, response) => {
   }
 
   sendFile(response, filePath);
+});
+
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(`[ERROR] Port ${PORT} is already in use. Start with another port, for example: PORT=${PORT + 1} node server.js`);
+    return;
+  }
+
+  console.error("[ERROR] Server failed to start:", error.message);
 });
 
 server.listen(PORT, () => {

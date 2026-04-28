@@ -5,6 +5,10 @@
     "email": "client@wotc.local",
     "phone": "(973) 555-0198",
     "status": "Demo client",
+    "membershipStatus": "Active",
+    "membershipType": "Demo membership",
+    "packageBalance": 0,
+    "packageNotes": "Package tracking placeholder for MVP testing.",
     "address": {
       "street": "21 Clubhouse Drive",
       "city": "West Orange",

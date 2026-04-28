@@ -1,0 +1,16 @@
+[
+  {
+    "id": "staff-1",
+    "role": "staff",
+    "name": "Front Desk",
+    "email": "staff@wotc.local",
+    "password": "demo123"
+  },
+  {
+    "id": "client-1",
+    "role": "client",
+    "name": "Thiago Member",
+    "email": "client@wotc.local",
+    "password": "demo123"
+  }
+]

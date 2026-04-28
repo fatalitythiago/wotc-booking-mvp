@@ -7,4 +7,4 @@ function run(command, args) {
 
 run(process.execPath, ["--check", "server.js"]);
 run(process.execPath, ["--check", "public/script.js"]);
-run("git", ["status", "--short", "data/bookings.json", "data/clients.json"]);
+run("git", ["status", "--short", "data/bookings.json", "data/clients.json", "data/users.json"]);

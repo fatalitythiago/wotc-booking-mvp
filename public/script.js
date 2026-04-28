@@ -9,7 +9,8 @@ const state = {
   activePanelView: "booking",
   clientSearchQuery: "",
   selectedClientId: null,
-  bookingClientId: null
+  bookingClientId: null,
+  lastRecurringResult: null
 };
 
 const timeOptions = [
@@ -28,6 +29,16 @@ const slotHeight = 72;
 const DEFAULT_BOOKING_TYPE = {
   slotType: "reservation",
   slotLabel: "Reservation"
+};
+const PAYMENT_STATUS_LABELS = {
+  paid: "Paid",
+  unpaid: "Unpaid",
+  "not-required": "Not required"
+};
+const CONFIRMATION_STATUS_LABELS = {
+  "not-reviewed": "Not reviewed",
+  reviewed: "Reviewed",
+  "not-needed": "Not needed"
 };
 
 // Add or rename slot menu options here without changing the grid renderer below.
@@ -128,6 +139,16 @@ const courtSelect = document.getElementById("courtId");
 const startTimeSelect = document.getElementById("startTime");
 const endTimeSelect = document.getElementById("endTime");
 const notesInput = document.getElementById("notes");
+const staffBookingFields = document.getElementById("staffBookingFields");
+const paymentStatusSelect = document.getElementById("paymentStatus");
+const confirmationStatusSelect = document.getElementById("confirmationStatus");
+const confirmationTextInput = document.getElementById("confirmationText");
+const recurringBookingInput = document.getElementById("recurringBooking");
+const recurringBookingLabel = document.getElementById("recurringBookingLabel");
+const recurringWeeksInput = document.getElementById("recurringWeeks");
+const recurringWeeksLabel = document.getElementById("recurringWeeksLabel");
+const cancelReasonInput = document.getElementById("cancelReason");
+const cancelReasonLabel = document.getElementById("cancelReasonLabel");
 const formMessage = document.getElementById("formMessage");
 const bookingPanelTitle = document.getElementById("bookingPanelTitle");
 const bookingPanelSubtitle = document.getElementById("bookingPanelSubtitle");
@@ -173,6 +194,41 @@ function timeToMinutes(time) {
 function setMessage(target, text, type = "") {
   target.textContent = text;
   target.className = `message ${type}`.trim();
+}
+
+function getPaymentStatusLabel(status) {
+  return PAYMENT_STATUS_LABELS[status] || PAYMENT_STATUS_LABELS.unpaid;
+}
+
+function getConfirmationStatusLabel(status) {
+  return CONFIRMATION_STATUS_LABELS[status] || CONFIRMATION_STATUS_LABELS["not-reviewed"];
+}
+
+function getCourtName(courtId) {
+  const court = state.courts.find((item) => item.id === courtId);
+  return court ? court.name : courtId;
+}
+
+function getBookingDurationMinutes(booking) {
+  return timeToMinutes(booking.endTime) - timeToMinutes(booking.startTime);
+}
+
+function getBookingClientKey(booking) {
+  return booking.clientId || booking.ownerEmail || booking.displayName || booking.playerName || "unknown";
+}
+
+function getBookingTypeLabel(booking) {
+  return booking.slotType !== DEFAULT_BOOKING_TYPE.slotType
+    ? booking.slotLabel || booking.slotType
+    : "Reservation";
+}
+
+function makeBookingActionRow(booking, className = "client-booking-row") {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = className;
+  row.addEventListener("click", () => loadBookingIntoForm(booking));
+  return row;
 }
 
 function setActivePanelView(view) {
@@ -433,6 +489,19 @@ function renderClientNotes(client) {
   toolPanel.appendChild(list);
 }
 
+function renderClientMembership(client) {
+  const heading = document.createElement("h3");
+  heading.textContent = "Membership and package";
+  toolPanel.appendChild(heading);
+
+  toolPanel.appendChild(renderInfoList([
+    { label: "Membership", value: client.membershipStatus || "Not set" },
+    { label: "Type", value: client.membershipType || "Not set" },
+    { label: "Package balance", value: client.packageBalance == null ? "Not set" : String(client.packageBalance) },
+    { label: "Package notes", value: client.packageNotes || "No package notes" }
+  ]));
+}
+
 function renderClientsTool() {
   const searchLabel = document.createElement("label");
   searchLabel.className = "tool-search";
@@ -528,6 +597,7 @@ function renderClientsTool() {
 
   detail.append(title, details);
   toolPanel.appendChild(detail);
+  renderClientMembership(selectedClient);
   renderClientBookingSummary(clientBookings);
   renderClientNotes(selectedClient);
   renderClientPayments(selectedClient);
@@ -537,61 +607,121 @@ function renderPaymentsTool() {
   const activeBookings = state.bookings.filter((booking) => booking.status === "active");
   const reservations = activeBookings.filter((booking) => booking.slotType === "reservation");
   const managedSlots = activeBookings.filter((booking) => booking.slotType !== "reservation");
+  const unpaidBookings = reservations.filter((booking) =>
+    (booking.paymentStatus || "unpaid") === "unpaid"
+  );
 
   toolPanel.appendChild(renderInfoList([
     { label: "Active reservations", value: String(reservations.length) },
     { label: "Managed slots", value: String(managedSlots.length) },
-    { label: "Unpaid courts", value: "Not connected yet" }
+    { label: "Unpaid courts", value: String(unpaidBookings.length) }
   ]));
 
-  const note = document.createElement("p");
-  note.className = "tool-note";
-  note.textContent = "This is the future place for unpaid court warnings, balance checks, and payment follow-up.";
-  toolPanel.appendChild(note);
+  const list = document.createElement("div");
+  list.className = "client-booking-list";
+
+  if (unpaidBookings.length === 0) {
+    const emptyState = document.createElement("p");
+    emptyState.className = "muted empty-state";
+    emptyState.textContent = "No unpaid reservations for this date.";
+    list.appendChild(emptyState);
+  } else {
+    unpaidBookings
+      .slice()
+      .sort((first, second) =>
+        first.startTime.localeCompare(second.startTime) ||
+        first.courtId.localeCompare(second.courtId)
+      )
+      .forEach((booking) => {
+        const row = makeBookingActionRow(booking);
+        row.innerHTML = `
+          <strong>${booking.displayName}</strong>
+          <span>${getCourtName(booking.courtId)} · ${formatTimeLabel(booking.startTime)} - ${formatTimeLabel(booking.endTime)}</span>
+          <span>${getPaymentStatusLabel(booking.paymentStatus || "unpaid")}</span>
+        `;
+        list.appendChild(row);
+      });
+  }
+
+  toolPanel.appendChild(list);
 }
 
 function renderRulesTool() {
   const activeBookings = state.bookings.filter((booking) => booking.status === "active");
-  const longBookings = activeBookings.filter((booking) =>
-    timeToMinutes(booking.endTime) - timeToMinutes(booking.startTime) > 90
-  );
+  const reservations = activeBookings.filter((booking) => booking.slotType === "reservation");
+  const longBookings = reservations.filter((booking) => getBookingDurationMinutes(booking) > 90);
   const managedSlots = activeBookings.filter((booking) => booking.slotType !== "reservation");
+  const clientCounts = reservations.reduce((counts, booking) => {
+    const key = getBookingClientKey(booking);
+    counts.set(key, (counts.get(key) || 0) + 1);
+    return counts;
+  }, new Map());
+  const duplicateBookings = reservations.filter((booking) =>
+    clientCounts.get(getBookingClientKey(booking)) > 1
+  );
+  const warningCount = longBookings.length + duplicateBookings.length;
 
   toolPanel.appendChild(renderInfoList([
-    { label: "Warnings today", value: String(longBookings.length) },
+    { label: "Warnings today", value: String(warningCount) },
+    { label: "Long bookings", value: String(longBookings.length) },
+    { label: "Duplicate client activity", value: String(duplicateBookings.length) },
     { label: "Managed blocks", value: String(managedSlots.length) },
-    { label: "Rule engine", value: "Placeholder" }
   ]));
 
   const list = document.createElement("div");
   list.className = "tool-alert-list";
 
-  if (longBookings.length === 0) {
+  if (warningCount === 0) {
     const emptyState = document.createElement("p");
     emptyState.className = "muted empty-state";
-    emptyState.textContent = "No long-booking warnings for this date.";
+    emptyState.textContent = "No rule warnings for this date.";
     list.appendChild(emptyState);
   } else {
     longBookings.forEach((booking) => {
       const warning = document.createElement("div");
       warning.className = "tool-alert";
-      warning.textContent = `${booking.displayName} is booked from ${formatTimeLabel(booking.startTime)} to ${formatTimeLabel(booking.endTime)}.`;
+      warning.textContent = `Long booking: ${booking.displayName} is booked for ${getBookingDurationMinutes(booking)} minutes on ${getCourtName(booking.courtId)}.`;
+      list.appendChild(warning);
+    });
+
+    duplicateBookings.forEach((booking) => {
+      const warning = document.createElement("div");
+      warning.className = "tool-alert";
+      warning.textContent = `Duplicate activity: ${booking.displayName} has more than one reservation on this date.`;
       list.appendChild(warning);
     });
   }
 
   toolPanel.appendChild(list);
+
+  if (managedSlots.length > 0) {
+    const managedHeading = document.createElement("h3");
+    managedHeading.textContent = "Managed blocks";
+    toolPanel.appendChild(managedHeading);
+
+    const managedList = document.createElement("div");
+    managedList.className = "tool-alert-list";
+    managedSlots.forEach((booking) => {
+      const item = document.createElement("div");
+      item.className = "tool-alert managed-alert";
+      item.textContent = `${getBookingTypeLabel(booking)} · ${getCourtName(booking.courtId)} · ${formatTimeLabel(booking.startTime)} - ${formatTimeLabel(booking.endTime)}`;
+      managedList.appendChild(item);
+    });
+    toolPanel.appendChild(managedList);
+  }
 }
 
 function renderNotesTool() {
   const bookingNotes = state.bookings
     .filter((booking) => booking.notes)
     .slice(0, 5);
+  const selectedClient = getSelectedClient();
+  const clientNotes = selectedClient && Array.isArray(selectedClient.notes) ? selectedClient.notes : [];
 
-  const note = document.createElement("p");
-  note.className = "tool-note";
-  note.textContent = "Staff notes will live here later. For now, recent booking notes are shown below.";
-  toolPanel.appendChild(note);
+  toolPanel.appendChild(renderInfoList([
+    { label: "Booking notes", value: String(bookingNotes.length) },
+    { label: "Selected client notes", value: String(clientNotes.length) }
+  ]));
 
   const list = document.createElement("div");
   list.className = "tool-alert-list";
@@ -605,25 +735,54 @@ function renderNotesTool() {
     bookingNotes.forEach((booking) => {
       const noteCard = document.createElement("div");
       noteCard.className = "tool-alert";
-      noteCard.textContent = `${booking.displayName}: ${booking.notes}`;
+      noteCard.textContent = `Booking · ${booking.displayName} · ${getCourtName(booking.courtId)}: ${booking.notes}`;
       list.appendChild(noteCard);
     });
   }
 
   toolPanel.appendChild(list);
+
+  if (selectedClient) {
+    const heading = document.createElement("h3");
+    heading.textContent = `${selectedClient.name} notes`;
+    toolPanel.appendChild(heading);
+
+    if (clientNotes.length === 0) {
+      const emptyState = document.createElement("p");
+      emptyState.className = "muted empty-state";
+      emptyState.textContent = "No client notes for the selected client.";
+      toolPanel.appendChild(emptyState);
+    } else {
+      const clientList = document.createElement("div");
+      clientList.className = "tool-alert-list";
+      clientNotes.forEach((note) => {
+        const noteCard = document.createElement("div");
+        noteCard.className = "tool-alert";
+        noteCard.textContent = `Client · ${note.date || "No date"}: ${note.text || ""}`;
+        clientList.appendChild(noteCard);
+      });
+      toolPanel.appendChild(clientList);
+    }
+  }
 }
 
 function renderReportsTool() {
   const activeBookings = state.bookings.filter((booking) => booking.status === "active");
   const cancelledBookings = state.bookings.filter((booking) => booking.status === "cancelled");
   const reservations = activeBookings.filter((booking) => booking.slotType === "reservation");
-  const openTime = activeBookings.filter((booking) => booking.slotType === "open-time");
+  const managedSlots = activeBookings.filter((booking) => booking.slotType !== "reservation");
+  const unpaidBookings = reservations.filter((booking) => (booking.paymentStatus || "unpaid") === "unpaid");
+  const staffCreated = state.bookings.filter((booking) => booking.createdByRole === "staff");
+  const clientCreated = state.bookings.filter((booking) => booking.createdByRole === "client");
 
   toolPanel.appendChild(renderInfoList([
     { label: "Total items", value: String(state.bookings.length) },
     { label: "Active reservations", value: String(reservations.length) },
-    { label: "Open time blocks", value: String(openTime.length) },
-    { label: "Cancelled", value: String(cancelledBookings.length) }
+    { label: "Managed slots", value: String(managedSlots.length) },
+    { label: "Cancelled", value: String(cancelledBookings.length) },
+    { label: "Unpaid courts", value: String(unpaidBookings.length) },
+    { label: "Staff-created items", value: String(staffCreated.length) },
+    { label: "Client-created items", value: String(clientCreated.length) }
   ]));
 }
 
@@ -648,7 +807,7 @@ function renderAuditTool() {
       const court = state.courts.find((item) => item.id === booking.courtId);
       const row = document.createElement("button");
       row.type = "button";
-      row.className = "audit-row";
+      row.className = `audit-row ${booking.status === "cancelled" ? "is-cancelled" : ""} ${booking.slotType !== "reservation" ? `managed-slot ${getSlotTypeClassName(booking.slotType)}` : ""}`.trim();
 
       const heading = document.createElement("div");
       heading.className = "audit-row-heading";
@@ -665,10 +824,12 @@ function renderAuditTool() {
       heading.append(name, status);
 
       const details = document.createElement("span");
-      details.textContent = `${court ? court.name : booking.courtId} · ${formatTimeLabel(booking.startTime)} - ${formatTimeLabel(booking.endTime)}`;
+      details.textContent = `${court ? court.name : booking.courtId} · ${formatTimeLabel(booking.startTime)} - ${formatTimeLabel(booking.endTime)} · ${getBookingTypeLabel(booking)} · ${getPaymentStatusLabel(booking.paymentStatus || "unpaid")}`;
 
       const notes = document.createElement("span");
-      notes.textContent = booking.notes || "No notes";
+      notes.textContent = booking.cancelReason
+        ? `Cancel reason: ${booking.cancelReason}`
+        : booking.notes || "No notes";
 
       row.append(heading, details, notes);
       row.addEventListener("click", () => loadBookingIntoForm(booking));
@@ -794,8 +955,10 @@ function renderPlayerSuggestions() {
 function renderUser() {
   if (state.user.role === "staff") {
     renderClientInfoShortcut();
+    staffBookingFields.classList.remove("hidden");
   } else {
     clientInfoShortcut.classList.add("hidden");
+    staffBookingFields.classList.add("hidden");
   }
 
   if (state.user.role === "staff") {
@@ -859,6 +1022,8 @@ function renderSlotTypeOptions() {
 
 function syncFormForSlotType(nextType) {
   const selectedMeta = getSlotTypeMeta(nextType);
+  const isStaffUser = state.user?.role === "staff";
+  const isReservation = selectedMeta.slotType === DEFAULT_BOOKING_TYPE.slotType;
 
   slotTypeSelect.value = selectedMeta.slotType;
   slotTypeSelect.dataset.previousType = selectedMeta.slotType;
@@ -866,16 +1031,23 @@ function syncFormForSlotType(nextType) {
   playerNameLabel.classList.remove("hidden");
   playerNameLabelText.textContent = getPlayerNameFieldLabel(selectedMeta.slotType);
 
-  if (state.user?.role === "staff") {
+  if (isStaffUser) {
     playerNameInput.disabled = false;
     playerNameInput.required = true;
     playerCombobox.classList.remove("is-disabled");
+    paymentStatusSelect.value = isReservation ? (paymentStatusSelect.value || "unpaid") : "not-required";
+    confirmationStatusSelect.value = isReservation ? (confirmationStatusSelect.value || "not-reviewed") : "not-needed";
+    recurringBookingLabel.classList.toggle("hidden", !isReservation || Boolean(bookingIdInput.value));
+    recurringWeeksLabel.classList.toggle("hidden", !isReservation || !recurringBookingInput.checked || Boolean(bookingIdInput.value));
   } else {
     playerNameLabelText.textContent = "Player name";
     playerNameInput.value = state.user?.name || "";
     playerNameInput.disabled = true;
     playerNameInput.required = false;
     playerCombobox.classList.add("is-disabled");
+    recurringBookingInput.checked = false;
+    recurringBookingLabel.classList.add("hidden");
+    recurringWeeksLabel.classList.add("hidden");
     hidePlayerSuggestions();
   }
 }
@@ -924,6 +1096,13 @@ function resetBookingForm() {
   startTimeSelect.disabled = false;
   endTimeSelect.disabled = false;
   notesInput.disabled = false;
+  paymentStatusSelect.value = "unpaid";
+  confirmationStatusSelect.value = "not-reviewed";
+  confirmationTextInput.value = "";
+  recurringBookingInput.checked = false;
+  recurringWeeksInput.value = "4";
+  cancelReasonInput.value = "";
+  cancelReasonLabel.classList.add("hidden");
   bookingDateInput.value = datePicker.value;
   startTimeSelect.value = "09:00";
   endTimeSelect.value = "10:00";
@@ -968,6 +1147,8 @@ function prefillNewBooking(courtId, startTime, slotType = DEFAULT_BOOKING_TYPE.s
   const startIndex = timeOptions.indexOf(startTime);
   endTimeSelect.value = timeOptions[Math.min(startIndex + 1, timeOptions.length - 1)];
   syncFormForSlotType(slotType);
+  paymentStatusSelect.value = slotType === DEFAULT_BOOKING_TYPE.slotType ? "unpaid" : "not-required";
+  confirmationStatusSelect.value = slotType === DEFAULT_BOOKING_TYPE.slotType ? "not-reviewed" : "not-needed";
   if (state.user?.role === "staff") {
     const selectedClient = getSelectedClient();
     if (selectedClient && slotType === DEFAULT_BOOKING_TYPE.slotType) {
@@ -1067,6 +1248,13 @@ function loadBookingIntoForm(booking) {
   startTimeSelect.value = booking.startTime;
   endTimeSelect.value = booking.endTime;
   notesInput.value = booking.notes || "";
+  paymentStatusSelect.value = booking.paymentStatus || (isManagedSlot ? "not-required" : "unpaid");
+  confirmationStatusSelect.value = booking.confirmationStatus || (isManagedSlot ? "not-needed" : "not-reviewed");
+  confirmationTextInput.value = booking.confirmationText || "";
+  recurringBookingInput.checked = false;
+  recurringWeeksLabel.classList.add("hidden");
+  cancelReasonInput.value = "";
+  cancelReasonLabel.classList.toggle("hidden", booking.status !== "active" || state.user.role !== "staff");
 
   const canEdit = booking.isOwner || state.user.role === "staff";
   slotTypeSelect.value = booking.slotType || DEFAULT_BOOKING_TYPE.slotType;
@@ -1081,6 +1269,9 @@ function loadBookingIntoForm(booking) {
   startTimeSelect.disabled = !canEdit;
   endTimeSelect.disabled = !canEdit;
   notesInput.disabled = !canEdit;
+  paymentStatusSelect.disabled = !canEdit || state.user.role !== "staff";
+  confirmationStatusSelect.disabled = !canEdit || state.user.role !== "staff";
+  confirmationTextInput.disabled = !canEdit || state.user.role !== "staff";
   cancelBookingButton.classList.toggle("hidden", !canEdit || booking.status !== "active");
 }
 
@@ -1340,6 +1531,9 @@ async function handleBookingSubmit(event) {
 
   if (state.user.role === "staff") {
     payload.playerName = playerNameInput.value.trim();
+    payload.paymentStatus = paymentStatusSelect.value;
+    payload.confirmationStatus = confirmationStatusSelect.value;
+    payload.confirmationText = confirmationTextInput.value;
     const selectedClient = getClientById(state.bookingClientId);
     if (selectedClient && payload.playerName === selectedClient.name && payload.slotType === DEFAULT_BOOKING_TYPE.slotType) {
       payload.clientId = selectedClient.id;
@@ -1350,8 +1544,16 @@ async function handleBookingSubmit(event) {
   }
 
   const bookingId = bookingIdInput.value;
-  const url = bookingId ? `/api/bookings/${bookingId}` : "/api/bookings";
+  const isRecurringCreate = !bookingId &&
+    state.user.role === "staff" &&
+    recurringBookingInput.checked &&
+    payload.slotType === DEFAULT_BOOKING_TYPE.slotType;
+  const url = isRecurringCreate ? "/api/recurring-bookings" : bookingId ? `/api/bookings/${bookingId}` : "/api/bookings";
   const method = bookingId ? "PATCH" : "POST";
+
+  if (isRecurringCreate) {
+    payload.weeks = recurringWeeksInput.value;
+  }
 
   try {
     const payloadResult = await fetchJson(url, {
@@ -1360,13 +1562,21 @@ async function handleBookingSubmit(event) {
     });
     resetBookingForm();
     await loadBookings();
-    if (payloadResult.booking) {
+    if (payloadResult.bookings) {
+      state.lastRecurringResult = payloadResult;
+      const conflictText = payloadResult.conflicts?.length
+        ? ` ${payloadResult.conflicts.length} date(s) had conflicts.`
+        : "";
+      setMessage(formMessage, `${payloadResult.bookings.length} recurring booking(s) saved.${conflictText}`, "success");
+    } else if (payloadResult.booking) {
       const savedBooking = state.bookings.find((booking) => booking.id === payloadResult.booking.id);
       if (savedBooking) {
         loadBookingIntoForm(savedBooking);
       }
+      setMessage(formMessage, bookingId ? "Booking updated." : "Booking saved.", "success");
+    } else {
+      setMessage(formMessage, "Booking saved.", "success");
     }
-    setMessage(formMessage, bookingId ? "Booking updated." : "Booking saved.", "success");
   } catch (error) {
     setMessage(formMessage, error.message, "error");
   }
@@ -1380,7 +1590,10 @@ async function handleCancelBooking() {
   try {
     await fetchJson(`/api/bookings/${bookingIdInput.value}`, {
       method: "PATCH",
-      body: JSON.stringify({ status: "cancelled" })
+      body: JSON.stringify({
+        status: "cancelled",
+        cancelReason: cancelReasonInput.value
+      })
     });
     setMessage(formMessage, "Booking cancelled.", "success");
     resetBookingForm();
@@ -1454,6 +1667,9 @@ async function init() {
     if (slotTypeSelect.value !== DEFAULT_BOOKING_TYPE.slotType) {
       state.bookingClientId = null;
     }
+  });
+  recurringBookingInput.addEventListener("change", () => {
+    recurringWeeksLabel.classList.toggle("hidden", !recurringBookingInput.checked || Boolean(bookingIdInput.value));
   });
   document.addEventListener("click", (event) => {
     if (!schedulerMenuPanel.classList.contains("hidden") &&
