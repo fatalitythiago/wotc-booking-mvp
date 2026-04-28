@@ -560,6 +560,52 @@ button:hover {
   color: var(--accent-dark);
 }
 
+.booking-block {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  width: 100%;
+  min-height: 100%;
+  padding: 10px;
+  border: 1px solid rgba(20, 146, 207, 0.22);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  text-align: center;
+  line-height: 1.15;
+}
+
+.booking-block:hover {
+  background: var(--accent-soft);
+}
+
+.booking-block strong,
+.booking-block span,
+.booking-block small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.booking-block strong {
+  font-size: 0.94rem;
+}
+
+.booking-block span,
+.schedule-slot.booked .booking-block span {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.booking-block small {
+  color: var(--ink);
+  font-size: 0.76rem;
+}
+
 .schedule-slot.booked {
   background: var(--booked);
 }
@@ -587,6 +633,11 @@ button:hover {
   border-color: rgba(181, 69, 53, 0.18);
 }
 
+.schedule-slot.managed-slot .booking-block {
+  border-color: rgba(181, 69, 53, 0.22);
+  background: #fffaf8;
+}
+
 .schedule-slot.slot-type-open-time {
   background: #eef8fd;
 }
@@ -595,6 +646,11 @@ button:hover {
   background: #fafdff;
   border-color: rgba(20, 146, 207, 0.24);
   color: var(--accent-dark);
+}
+
+.schedule-slot.slot-type-open-time .booking-block {
+  border-color: rgba(20, 146, 207, 0.32);
+  background: #fafdff;
 }
 
 .schedule-slot.slot-type-canceled {
@@ -607,6 +663,11 @@ button:hover {
   color: var(--danger);
 }
 
+.schedule-slot.slot-type-canceled .booking-block {
+  border-color: rgba(181, 69, 53, 0.34);
+  background: #fff8f7;
+}
+
 .schedule-slot.slot-type-maintenance {
   background: #f1f4f7;
 }
@@ -617,6 +678,11 @@ button:hover {
   color: #476175;
 }
 
+.schedule-slot.slot-type-maintenance .booking-block {
+  border-color: rgba(107, 125, 144, 0.34);
+  background: #fbfdff;
+}
+
 .schedule-slot.slot-type-lesson {
   background: #fff4e8;
 }
@@ -625,6 +691,11 @@ button:hover {
   background: #fffaf5;
   border-color: rgba(223, 98, 41, 0.24);
   color: var(--accent-orange-dark);
+}
+
+.schedule-slot.slot-type-lesson .booking-block {
+  border-color: rgba(223, 98, 41, 0.34);
+  background: #fffaf5;
 }
 
 .slot-action-menu {
@@ -705,6 +776,7 @@ button:hover {
 }
 
 .client-tool-list,
+.client-booking-list,
 .tool-alert-list,
 .tool-info-list,
 .payment-history-list,
@@ -732,6 +804,28 @@ button:hover {
 }
 
 .client-tool-card span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.client-booking-row {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.client-booking-row:hover {
+  border-color: rgba(20, 146, 207, 0.35);
+  background: var(--accent-soft);
+}
+
+.client-booking-row span {
   color: var(--muted);
   font-size: 0.88rem;
 }

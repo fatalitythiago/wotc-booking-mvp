@@ -5,6 +5,7 @@
   "description": "Simple internal tennis court booking system starter with no external dependencies.",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js"
+    "check": "node --check server.js && node --check public/script.js",
+    "prepublish-check": "node scripts/prepublish-check.js"
   }
 }

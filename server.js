@@ -6,6 +6,7 @@ const { randomUUID, createHash } = require("node:crypto");
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const BOOKINGS_FILE = path.join(__dirname, "data", "bookings.json");
+const CLIENTS_FILE = path.join(__dirname, "data", "clients.json");
 const SESSION_COOKIE_NAME = "court_booking_session";
 
 const COURTS = Array.from({ length: 11 }, (_, index) => {
@@ -34,68 +35,63 @@ const USERS = [
   }
 ];
 
-const CLIENTS = USERS
-  .filter((user) => user.role === "client")
-  .map((user) => ({
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    phone: "(973) 555-0198",
-    address: {
-      street: "21 Clubhouse Drive",
-      city: "West Orange",
-      state: "NJ",
-      zip: "07052"
-    },
-    payments: [
-      {
-        id: "payment-1",
-        date: "2026-01-05",
-        description: "Winter season court package",
-        method: "Credit card",
-        amount: 420,
-        status: "Paid"
-      },
-      {
-        id: "payment-2",
-        date: "2026-02-14",
-        description: "Private lesson balance",
-        method: "ACH",
-        amount: 180,
-        status: "Paid"
-      },
-      {
-        id: "payment-3",
-        date: "2026-03-21",
-        description: "Guest fee and court time",
-        method: "Credit card",
-        amount: 96,
-        status: "Paid"
-      }
-    ]
-  }));
-
 const sessions = new Map();
 
-function readBookings() {
+function readJsonArray(filePath, label) {
   try {
-    const raw = fs.readFileSync(BOOKINGS_FILE, "utf8");
+    const raw = fs.readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
-    console.error("[ERROR] Failed to read bookings file:", error.message);
+    console.error(`[ERROR] Failed to read ${label} file:`, error.message);
     return [];
   }
 }
 
-function writeBookings(bookings) {
+function writeJsonArray(filePath, label, items) {
+  const directory = path.dirname(filePath);
+  const temporaryFile = path.join(directory, `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
+
   try {
-    fs.writeFileSync(BOOKINGS_FILE, JSON.stringify(bookings, null, 2));
-    return true;
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(temporaryFile, JSON.stringify(items, null, 2));
+    fs.renameSync(temporaryFile, filePath);
+    return { ok: true };
   } catch (error) {
-    console.error("[ERROR] Failed to write bookings file:", error.message);
-    return false;
+    console.error(`[ERROR] Failed to write ${label} file:`, error.message);
+    try {
+      if (fs.existsSync(temporaryFile)) {
+        fs.unlinkSync(temporaryFile);
+      }
+    } catch (cleanupError) {
+      console.error(`[ERROR] Failed to clean up temporary ${label} file:`, cleanupError.message);
+    }
+    return { ok: false, error };
   }
+}
+
+function readBookings() {
+  return readJsonArray(BOOKINGS_FILE, "bookings");
+}
+
+function writeBookings(bookings) {
+  return writeJsonArray(BOOKINGS_FILE, "bookings", bookings);
+}
+
+function readClients() {
+  return readJsonArray(CLIENTS_FILE, "clients");
+}
+
+function writeClients(clients) {
+  return writeJsonArray(CLIENTS_FILE, "clients", clients);
+}
+
+function findClientById(clientId) {
+  if (!clientId) {
+    return null;
+  }
+
+  return readClients().find((client) => client.id === clientId) || null;
 }
 
 function parseCookies(request) {
@@ -220,7 +216,11 @@ function overlapsExistingBooking(existingBooking, proposedBooking) {
 }
 
 function sanitizeBookingForViewer(booking, viewer) {
-  const isOwner = viewer && booking.userId === viewer.id;
+  const isOwner = viewer && (
+    booking.userId === viewer.id ||
+    booking.clientId === viewer.id ||
+    booking.ownerEmail === viewer.email
+  );
   const slotType = booking.slotType || "reservation";
   const slotLabel = booking.slotLabel ||
     (slotType !== "reservation" ? booking.playerName || "Unavailable" : "Reserved");
@@ -248,6 +248,7 @@ function sanitizeBookingForViewer(booking, viewer) {
     cancelledAt: booking.cancelledAt || null,
     roleVisibility: canViewDetails ? "full" : "limited",
     isOwner,
+    clientId: canViewDetails ? booking.clientId || null : null,
     ownerEmail: canViewDetails ? booking.ownerEmail : null,
     createdByRole: booking.createdByRole
   };
@@ -334,7 +335,7 @@ function handleGetClients(request, response) {
     return;
   }
 
-  sendJson(response, 200, { clients: CLIENTS });
+  sendJson(response, 200, { clients: readClients() });
 }
 
 function handleGetBookings(request, response) {
@@ -393,7 +394,12 @@ async function handleCreateBooking(request, response) {
       : slotType === "reservation"
         ? "Reserved"
         : "Unavailable";
-    const playerName = user.role === "staff"
+    const selectedClient = user.role === "staff" && slotType === "reservation"
+      ? findClientById(payload.clientId)
+      : null;
+    const playerName = selectedClient
+      ? selectedClient.name
+      : user.role === "staff"
       ? String(payload.playerName || "").trim()
       : user.name;
 
@@ -419,6 +425,11 @@ async function handleCreateBooking(request, response) {
       createdByRole: user.role
     };
 
+    if (selectedClient) {
+      proposedBooking.clientId = selectedClient.id;
+      proposedBooking.ownerEmail = selectedClient.email;
+    }
+
     const bookings = readBookings();
     const conflictingBooking = bookings.find((booking) => overlapsExistingBooking(booking, proposedBooking));
 
@@ -431,8 +442,11 @@ async function handleCreateBooking(request, response) {
 
     bookings.push(proposedBooking);
 
-    if (!writeBookings(bookings)) {
-      sendJson(response, 500, { error: "Unable to save booking right now." });
+    const writeResult = writeBookings(bookings);
+    if (!writeResult.ok) {
+      sendJson(response, 500, {
+        error: `Unable to save booking right now: ${writeResult.error.message}`
+      });
       return;
     }
 
@@ -474,6 +488,9 @@ async function handleUpdateBooking(request, response, bookingId) {
       const updatedSlotLabel = typeof payload.slotLabel === "string" && payload.slotLabel.trim()
         ? payload.slotLabel.trim()
         : (booking.slotLabel || (updatedSlotType === "reservation" ? "Reserved" : "Unavailable"));
+      const selectedClient = user.role === "staff" && updatedSlotType === "reservation"
+        ? findClientById(payload.clientId)
+        : null;
       const updatedBooking = {
         ...booking,
         date: payload.date || booking.date,
@@ -481,13 +498,24 @@ async function handleUpdateBooking(request, response, bookingId) {
         startTime: payload.startTime || booking.startTime,
         endTime: payload.endTime || booking.endTime,
         notes: typeof payload.notes === "string" ? payload.notes.trim() : booking.notes,
-        playerName: user.role === "staff" && typeof payload.playerName === "string"
+        playerName: selectedClient
+          ? selectedClient.name
+          : user.role === "staff" && typeof payload.playerName === "string"
           ? String(payload.playerName).trim()
           : booking.playerName,
         slotType: updatedSlotType,
         slotLabel: updatedSlotLabel,
         status: payload.status || booking.status
       };
+
+      if (selectedClient) {
+        updatedBooking.clientId = selectedClient.id;
+        updatedBooking.ownerEmail = selectedClient.email;
+      } else if (user.role === "staff" && updatedSlotType === "reservation" && "clientId" in payload) {
+        delete updatedBooking.clientId;
+      } else if (updatedSlotType !== "reservation") {
+        delete updatedBooking.clientId;
+      }
 
       if (!updatedBooking.playerName) {
         sendJson(response, 400, { error: "Player name is required." });
@@ -518,13 +546,19 @@ async function handleUpdateBooking(request, response, bookingId) {
       }
 
       Object.assign(booking, updatedBooking);
+      if (!updatedBooking.clientId) {
+        delete booking.clientId;
+      }
       if (booking.status !== "cancelled") {
         delete booking.cancelledAt;
       }
     }
 
-    if (!writeBookings(bookings)) {
-      sendJson(response, 500, { error: "Unable to update booking right now." });
+    const writeResult = writeBookings(bookings);
+    if (!writeResult.ok) {
+      sendJson(response, 500, {
+        error: `Unable to update booking right now: ${writeResult.error.message}`
+      });
       return;
     }
 

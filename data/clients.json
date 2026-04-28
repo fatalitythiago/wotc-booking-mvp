@@ -1,0 +1,48 @@
+[
+  {
+    "id": "client-1",
+    "name": "Thiago Member",
+    "email": "client@wotc.local",
+    "phone": "(973) 555-0198",
+    "status": "Demo client",
+    "address": {
+      "street": "21 Clubhouse Drive",
+      "city": "West Orange",
+      "state": "NJ",
+      "zip": "07052"
+    },
+    "notes": [
+      {
+        "id": "note-1",
+        "date": "2026-04-27",
+        "text": "Seed client for local booking workflow testing."
+      }
+    ],
+    "payments": [
+      {
+        "id": "payment-1",
+        "date": "2026-01-05",
+        "description": "Winter season court package",
+        "method": "Credit card",
+        "amount": 420,
+        "status": "Paid"
+      },
+      {
+        "id": "payment-2",
+        "date": "2026-02-14",
+        "description": "Private lesson balance",
+        "method": "ACH",
+        "amount": 180,
+        "status": "Paid"
+      },
+      {
+        "id": "payment-3",
+        "date": "2026-03-21",
+        "description": "Guest fee and court time",
+        "method": "Credit card",
+        "amount": 96,
+        "status": "Paid"
+      }
+    ]
+  }
+]

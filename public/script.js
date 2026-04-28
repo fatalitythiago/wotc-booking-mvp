@@ -8,7 +8,8 @@ const state = {
   openSlotMenu: null,
   activePanelView: "booking",
   clientSearchQuery: "",
-  selectedClientId: null
+  selectedClientId: null,
+  bookingClientId: null
 };
 
 const timeOptions = [
@@ -204,6 +205,33 @@ function getSelectedClient() {
   return state.clients.find((client) => client.id === state.selectedClientId) || null;
 }
 
+function getClientById(clientId) {
+  return state.clients.find((client) => client.id === clientId) || null;
+}
+
+function bookingMatchesClient(booking, client) {
+  if (!booking || !client) {
+    return false;
+  }
+
+  return booking.clientId === client.id ||
+    booking.displayName === client.name ||
+    booking.playerName === client.name ||
+    booking.ownerEmail === client.email;
+}
+
+function selectClient(client, options = {}) {
+  state.selectedClientId = client.id;
+  state.clientSearchQuery = client.name;
+
+  if (options.prefillBooking) {
+    state.bookingClientId = client.id;
+    playerNameInput.value = client.name;
+  }
+
+  renderClientInfoShortcut();
+}
+
 function renderClientInfoShortcut() {
   if (state.user?.role !== "staff") {
     clientInfoShortcut.classList.add("hidden");
@@ -272,17 +300,38 @@ function getClientBookings(client) {
   }
 
   return state.bookings.filter((booking) =>
-    booking.displayName === client.name ||
-    booking.playerName === client.name ||
-    booking.ownerEmail === client.email
+    bookingMatchesClient(booking, client)
   );
+}
+
+function getClientPaymentSummary(client) {
+  const payments = Array.isArray(client.payments) ? client.payments : [];
+  const paidTotal = payments
+    .filter((payment) => String(payment.status || "").toLowerCase() === "paid")
+    .reduce((total, payment) => total + Number(payment.amount || 0), 0);
+  const unpaidTotal = payments
+    .filter((payment) => String(payment.status || "").toLowerCase() !== "paid")
+    .reduce((total, payment) => total + Number(payment.amount || 0), 0);
+
+  return {
+    count: payments.length,
+    paidTotal,
+    unpaidTotal
+  };
 }
 
 function renderClientPayments(client) {
   const payments = Array.isArray(client.payments) ? client.payments : [];
   const heading = document.createElement("h3");
-  heading.textContent = "Payment history";
+  heading.textContent = "Payment summary";
   toolPanel.appendChild(heading);
+
+  const summary = getClientPaymentSummary(client);
+  toolPanel.appendChild(renderInfoList([
+    { label: "Payment records", value: String(summary.count) },
+    { label: "Paid total", value: formatMoney(summary.paidTotal) },
+    { label: "Open balance", value: formatMoney(summary.unpaidTotal) }
+  ]));
 
   if (payments.length === 0) {
     const emptyState = document.createElement("p");
@@ -316,6 +365,74 @@ function renderClientPayments(client) {
   toolPanel.appendChild(list);
 }
 
+function renderClientBookingSummary(clientBookings) {
+  const activeBookings = clientBookings.filter((booking) => booking.status === "active");
+  const cancelledBookings = clientBookings.filter((booking) => booking.status === "cancelled");
+  const managedSlots = clientBookings.filter((booking) => booking.slotType !== "reservation");
+
+  toolPanel.appendChild(renderInfoList([
+    { label: "Bookings on date", value: String(clientBookings.length) },
+    { label: "Active bookings", value: String(activeBookings.length) },
+    { label: "Cancelled", value: String(cancelledBookings.length) },
+    { label: "Managed slots", value: String(managedSlots.length) }
+  ]));
+
+  const list = document.createElement("div");
+  list.className = "client-booking-list";
+
+  if (clientBookings.length === 0) {
+    const emptyState = document.createElement("p");
+    emptyState.className = "muted empty-state";
+    emptyState.textContent = "No bookings for this client on the selected date.";
+    list.appendChild(emptyState);
+  } else {
+    clientBookings
+      .slice()
+      .sort((first, second) => first.startTime.localeCompare(second.startTime))
+      .forEach((booking) => {
+        const court = state.courts.find((item) => item.id === booking.courtId);
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "client-booking-row";
+        row.innerHTML = `
+          <strong>${court ? court.name : booking.courtId}</strong>
+          <span>${formatTimeLabel(booking.startTime)} - ${formatTimeLabel(booking.endTime)} · ${booking.status}</span>
+        `;
+        row.addEventListener("click", () => loadBookingIntoForm(booking));
+        list.appendChild(row);
+      });
+  }
+
+  toolPanel.appendChild(list);
+}
+
+function renderClientNotes(client) {
+  const notes = Array.isArray(client.notes) ? client.notes : [];
+  const heading = document.createElement("h3");
+  heading.textContent = "Notes";
+  toolPanel.appendChild(heading);
+
+  if (notes.length === 0) {
+    const emptyState = document.createElement("p");
+    emptyState.className = "muted empty-state";
+    emptyState.textContent = "No client notes yet.";
+    toolPanel.appendChild(emptyState);
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "tool-alert-list";
+
+  notes.forEach((note) => {
+    const row = document.createElement("div");
+    row.className = "tool-alert";
+    row.textContent = `${note.date || "No date"}: ${note.text || ""}`;
+    list.appendChild(row);
+  });
+
+  toolPanel.appendChild(list);
+}
+
 function renderClientsTool() {
   const searchLabel = document.createElement("label");
   searchLabel.className = "tool-search";
@@ -329,6 +446,8 @@ function renderClientsTool() {
     const cursorPosition = searchInput.selectionStart || searchInput.value.length;
     state.clientSearchQuery = searchInput.value;
     state.selectedClientId = null;
+    state.bookingClientId = null;
+    renderClientInfoShortcut();
     renderToolPanel();
     const nextInput = toolPanel.querySelector(".tool-search input");
     if (nextInput) {
@@ -379,8 +498,7 @@ function renderClientsTool() {
 
       button.append(name, email, phone, address);
       button.addEventListener("click", () => {
-        state.selectedClientId = client.id;
-        renderClientInfoShortcut();
+        selectClient(client, { prefillBooking: state.activePanelView === "booking" });
         renderToolPanel();
       });
       list.appendChild(button);
@@ -405,12 +523,13 @@ function renderClientsTool() {
     { label: "Email", value: selectedClient.email },
     { label: "Phone", value: selectedClient.phone || "Not available" },
     { label: "Home address", value: formatClientAddress(selectedClient.address) },
-    { label: "Bookings on date", value: String(clientBookings.length) },
-    { label: "Status", value: "Demo client" }
+    { label: "Status", value: selectedClient.status || "Active" }
   ]);
 
   detail.append(title, details);
   toolPanel.appendChild(detail);
+  renderClientBookingSummary(clientBookings);
+  renderClientNotes(selectedClient);
   renderClientPayments(selectedClient);
 }
 
@@ -633,7 +752,7 @@ function hidePlayerSuggestions() {
 }
 
 function choosePlayer(client) {
-  playerNameInput.value = client.name;
+  selectClient(client, { prefillBooking: true });
   hidePlayerSuggestions();
 }
 
@@ -794,6 +913,7 @@ function resetBookingForm() {
   bookingForm.reset();
   bookingIdInput.value = "";
   state.selectedBookingId = null;
+  state.bookingClientId = null;
   state.openSlotMenu = null;
   setActivePanelView("booking");
   bookingPanelTitle.textContent = "Create booking";
@@ -812,7 +932,13 @@ function resetBookingForm() {
   slotTypeSelect.dataset.previousType = DEFAULT_BOOKING_TYPE.slotType;
   slotTypeSelect.dataset.previousLabel = DEFAULT_BOOKING_TYPE.slotLabel;
   if (state.user?.role === "staff") {
-    playerNameInput.value = "";
+    const selectedClient = getSelectedClient();
+    if (selectedClient) {
+      state.bookingClientId = selectedClient.id;
+      playerNameInput.value = selectedClient.name;
+    } else {
+      playerNameInput.value = "";
+    }
   }
   syncFormForSlotType(DEFAULT_BOOKING_TYPE.slotType);
   setMessage(formMessage, "");
@@ -843,7 +969,14 @@ function prefillNewBooking(courtId, startTime, slotType = DEFAULT_BOOKING_TYPE.s
   endTimeSelect.value = timeOptions[Math.min(startIndex + 1, timeOptions.length - 1)];
   syncFormForSlotType(slotType);
   if (state.user?.role === "staff") {
-    playerNameInput.value = "";
+    const selectedClient = getSelectedClient();
+    if (selectedClient && slotType === DEFAULT_BOOKING_TYPE.slotType) {
+      state.bookingClientId = selectedClient.id;
+      playerNameInput.value = selectedClient.name;
+    } else {
+      state.bookingClientId = null;
+      playerNameInput.value = "";
+    }
   }
   bookingPanelTitle.textContent = "Create booking";
   bookingPanelSubtitle.textContent = isManagedSlotType(slotType)
@@ -862,19 +995,11 @@ function focusBookingPanel(message) {
   }
 }
 
-function setOpenSlotMenu(courtId, startTime) {
-  const nextMenu = state.openSlotMenu &&
-    state.openSlotMenu.courtId === courtId &&
-    state.openSlotMenu.startTime === startTime
-    ? null
-    : { courtId, startTime };
-
+function openReservationForm(courtId, startTime) {
   setSchedulerMenuOpen(false);
-  if (nextMenu) {
-    prefillNewBooking(courtId, startTime);
-  }
-  state.openSlotMenu = nextMenu;
+  prefillNewBooking(courtId, startTime, DEFAULT_BOOKING_TYPE.slotType);
   buildSchedulerGrid();
+  focusBookingPanel("Reservation selected. Fill in the booking details.");
 }
 
 async function createManagedSlot(courtId, startTime, action) {
@@ -922,6 +1047,11 @@ function loadBookingIntoForm(booking) {
   setSidePanelCollapsed(false);
   setActivePanelView("booking");
   state.selectedBookingId = booking.id;
+  state.bookingClientId = booking.clientId || null;
+  if (booking.clientId) {
+    state.selectedClientId = booking.clientId;
+    renderClientInfoShortcut();
+  }
   state.openSlotMenu = null;
   bookingIdInput.value = booking.id;
   const isManagedSlot = booking.slotType !== "reservation";
@@ -1002,8 +1132,15 @@ function buildSchedulerGrid() {
         }
         const bookingButton = document.createElement("button");
         bookingButton.type = "button";
-        bookingButton.className = "slot-pill";
-        bookingButton.innerHTML = `<span>${booking.displayName}</span>`;
+        bookingButton.className = "slot-pill booking-block";
+        const bookingMeta = booking.slotType !== DEFAULT_BOOKING_TYPE.slotType
+          ? booking.slotLabel
+          : `${formatTimeLabel(booking.startTime)} - ${formatTimeLabel(booking.endTime)}`;
+        bookingButton.innerHTML = `
+          <strong>${booking.displayName}</strong>
+          <span>${bookingMeta}</span>
+          ${booking.notes ? `<small>${booking.notes}</small>` : ""}
+        `;
         bookingButton.addEventListener("click", () => loadBookingIntoForm(booking));
         slot.appendChild(bookingButton);
       } else {
@@ -1015,7 +1152,7 @@ function buildSchedulerGrid() {
         reserveButton.innerHTML = "<span>Reserve</span>";
         reserveButton.addEventListener("click", (event) => {
           event.stopPropagation();
-          setOpenSlotMenu(court.id, time);
+          openReservationForm(court.id, time);
         });
         slot.appendChild(reserveButton);
 
@@ -1203,6 +1340,13 @@ async function handleBookingSubmit(event) {
 
   if (state.user.role === "staff") {
     payload.playerName = playerNameInput.value.trim();
+    const selectedClient = getClientById(state.bookingClientId);
+    if (selectedClient && payload.playerName === selectedClient.name && payload.slotType === DEFAULT_BOOKING_TYPE.slotType) {
+      payload.clientId = selectedClient.id;
+    } else {
+      payload.clientId = null;
+      state.bookingClientId = null;
+    }
   }
 
   const bookingId = bookingIdInput.value;
@@ -1210,13 +1354,19 @@ async function handleBookingSubmit(event) {
   const method = bookingId ? "PATCH" : "POST";
 
   try {
-    await fetchJson(url, {
+    const payloadResult = await fetchJson(url, {
       method,
       body: JSON.stringify(payload)
     });
-    setMessage(formMessage, bookingId ? "Booking updated." : "Booking saved.", "success");
     resetBookingForm();
     await loadBookings();
+    if (payloadResult.booking) {
+      const savedBooking = state.bookings.find((booking) => booking.id === payloadResult.booking.id);
+      if (savedBooking) {
+        loadBookingIntoForm(savedBooking);
+      }
+    }
+    setMessage(formMessage, bookingId ? "Booking updated." : "Booking saved.", "success");
   } catch (error) {
     setMessage(formMessage, error.message, "error");
   }
@@ -1261,6 +1411,12 @@ async function init() {
   cancelBookingButton.addEventListener("click", handleCancelBooking);
   playerNameInput.addEventListener("focus", renderPlayerSuggestions);
   playerNameInput.addEventListener("input", renderPlayerSuggestions);
+  playerNameInput.addEventListener("input", () => {
+    const selectedClient = getClientById(state.bookingClientId);
+    if (selectedClient && playerNameInput.value.trim() !== selectedClient.name) {
+      state.bookingClientId = null;
+    }
+  });
   playerNameInput.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       hidePlayerSuggestions();
@@ -1295,6 +1451,9 @@ async function init() {
   });
   slotTypeSelect.addEventListener("change", () => {
     syncFormForSlotType(slotTypeSelect.value);
+    if (slotTypeSelect.value !== DEFAULT_BOOKING_TYPE.slotType) {
+      state.bookingClientId = null;
+    }
   });
   document.addEventListener("click", (event) => {
     if (!schedulerMenuPanel.classList.contains("hidden") &&
