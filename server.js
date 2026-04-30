@@ -11,7 +11,7 @@ const USERS_FILE = path.join(__dirname, "data", "users.json");
 const RESERVATION_TYPES_FILE = path.join(__dirname, "data", "reservation-types.json");
 const SESSION_COOKIE_NAME = "court_booking_session";
 const VALID_PAYMENT_STATUSES = new Set(["paid", "unpaid", "not-required"]);
-const VALID_CONFIRMATION_STATUSES = new Set(["not-reviewed", "reviewed", "not-needed"]);
+const VALID_CONFIRMATION_STATUSES = new Set(["not-reviewed", "reviewed", "sent", "not-needed"]);
 
 const COURTS = Array.from({ length: 11 }, (_, index) => {
   const courtNumber = index + 1;
@@ -67,6 +67,10 @@ function writeBookings(bookings) {
 
 function readClients() {
   return readJsonArray(CLIENTS_FILE, "clients");
+}
+
+function writeClients(clients) {
+  return writeJsonArray(CLIENTS_FILE, "clients", clients);
 }
 
 function readUsers() {
@@ -257,6 +261,64 @@ function normalizeReservationTypePayload(payload, existingReservationType = null
   };
 }
 
+function normalizeClientPayload(payload, existingClient = null) {
+  const name = String(payload.name || existingClient?.name || "").trim();
+  const email = String(payload.email || existingClient?.email || "").trim().toLowerCase();
+  const phone = String(payload.phone || existingClient?.phone || "").trim();
+  const status = String(payload.status || existingClient?.status || "Active").trim();
+  const membershipStatus = String(payload.membershipStatus || existingClient?.membershipStatus || "Not set").trim();
+  const membershipType = String(payload.membershipType || existingClient?.membershipType || "Not set").trim();
+  const packageBalance = Number(payload.packageBalance ?? existingClient?.packageBalance ?? 0);
+  const packageNotes = String(payload.packageNotes || existingClient?.packageNotes || "").trim();
+  const addressPayload = payload.address && typeof payload.address === "object" ? payload.address : {};
+  const existingAddress = existingClient?.address && typeof existingClient.address === "object" ? existingClient.address : {};
+  const noteText = String(payload.noteText || "").trim();
+  const notes = Array.isArray(existingClient?.notes) ? [...existingClient.notes] : [];
+
+  if (noteText) {
+    notes.unshift({
+      id: randomUUID(),
+      date: new Date().toISOString().split("T")[0],
+      text: noteText
+    });
+  }
+
+  return {
+    id: existingClient?.id || `client-${randomUUID().slice(0, 8)}`,
+    name,
+    email,
+    phone,
+    status,
+    membershipStatus,
+    membershipType,
+    packageBalance: Number.isFinite(packageBalance) ? packageBalance : 0,
+    packageNotes,
+    address: {
+      street: String(addressPayload.street ?? existingAddress.street ?? "").trim(),
+      city: String(addressPayload.city ?? existingAddress.city ?? "").trim(),
+      state: String(addressPayload.state ?? existingAddress.state ?? "").trim(),
+      zip: String(addressPayload.zip ?? existingAddress.zip ?? "").trim()
+    },
+    notes,
+    payments: Array.isArray(existingClient?.payments) ? existingClient.payments : []
+  };
+}
+
+function normalizePaymentPayload(payload, user) {
+  const amount = Number(payload.amount);
+  return {
+    id: randomUUID(),
+    date: String(payload.date || new Date().toISOString().split("T")[0]).trim(),
+    description: String(payload.description || "Court payment").trim(),
+    method: String(payload.method || "Not specified").trim(),
+    amount: Number.isFinite(amount) && amount > 0 ? amount : 0,
+    status: String(payload.status || "Paid").trim(),
+    notes: String(payload.notes || "").trim(),
+    recordedBy: user.name,
+    recordedAt: new Date().toISOString()
+  };
+}
+
 function addDays(dateText, days) {
   const date = new Date(`${dateText}T12:00:00`);
   date.setDate(date.getDate() + days);
@@ -413,6 +475,9 @@ function sanitizeBookingForViewer(booking, viewer) {
     paymentStatus: canViewDetails ? booking.paymentStatus || (isManagedSlot ? "not-required" : "unpaid") : null,
     confirmationStatus: canViewDetails ? booking.confirmationStatus || (isManagedSlot ? "not-needed" : "not-reviewed") : null,
     confirmationText: canViewDetails ? booking.confirmationText || "" : "",
+    confirmationReviewedAt: canViewDetails ? booking.confirmationReviewedAt || null : null,
+    confirmationSentAt: canViewDetails ? booking.confirmationSentAt || null : null,
+    payments: canViewDetails ? booking.payments || [] : [],
     recurrenceId: canViewDetails ? booking.recurrenceId || null : null,
     roleVisibility: canViewDetails ? "full" : "limited",
     isOwner,
@@ -513,6 +578,96 @@ function handleGetClients(request, response) {
   sendJson(response, 200, {
     clients: clients.filter((client) => client.id === user.id || client.email === user.email)
   });
+}
+
+async function handleCreateClient(request, response) {
+  const user = requireAuth(request, response);
+  if (!user) {
+    return;
+  }
+
+  if (!isStaff(user)) {
+    sendJson(response, 403, { error: "Only staff can create clients." });
+    return;
+  }
+
+  try {
+    const payload = await parseBody(request);
+    const client = normalizeClientPayload(payload);
+
+    if (!client.name) {
+      sendJson(response, 400, { error: "Client name is required." });
+      return;
+    }
+
+    const clients = readClients();
+    if (client.email && clients.some((item) => item.email?.toLowerCase() === client.email)) {
+      sendJson(response, 409, { error: "A client with that email already exists." });
+      return;
+    }
+
+    clients.push(client);
+    const writeResult = writeClients(clients);
+    if (!writeResult.ok) {
+      sendJson(response, 500, {
+        error: `Unable to save client right now: ${writeResult.error.message}`
+      });
+      return;
+    }
+
+    sendJson(response, 201, { client });
+  } catch (error) {
+    sendJson(response, 400, { error: error.message });
+  }
+}
+
+async function handleUpdateClient(request, response, clientId) {
+  const user = requireAuth(request, response);
+  if (!user) {
+    return;
+  }
+
+  if (!isStaff(user)) {
+    sendJson(response, 403, { error: "Only staff can edit clients." });
+    return;
+  }
+
+  try {
+    const payload = await parseBody(request);
+    const clients = readClients();
+    const currentIndex = clients.findIndex((client) => client.id === clientId);
+
+    if (currentIndex === -1) {
+      sendJson(response, 404, { error: "Client not found." });
+      return;
+    }
+
+    const client = normalizeClientPayload(payload, clients[currentIndex]);
+    if (!client.name) {
+      sendJson(response, 400, { error: "Client name is required." });
+      return;
+    }
+
+    if (client.email && clients.some((item, index) =>
+      index !== currentIndex && item.email?.toLowerCase() === client.email
+    )) {
+      sendJson(response, 409, { error: "Another client already uses that email." });
+      return;
+    }
+
+    clients[currentIndex] = client;
+    const writeResult = writeClients(clients);
+    if (!writeResult.ok) {
+      sendJson(response, 500, {
+        error: `Unable to update client right now: ${writeResult.error.message}`
+      });
+      return;
+    }
+
+    sendJson(response, 200, { client });
+  } catch (error) {
+    sendJson(response, 400, { error: error.message });
+  }
 }
 
 function handleGetReservationTypes(request, response) {
@@ -722,6 +877,9 @@ async function handleCreateBooking(request, response) {
       paymentStatus: normalized.paymentStatus,
       confirmationStatus: normalized.confirmationStatus,
       confirmationText: normalized.confirmationText,
+      confirmationReviewedAt: normalized.confirmationStatus === "reviewed" ? new Date().toISOString() : null,
+      confirmationSentAt: normalized.confirmationStatus === "sent" ? new Date().toISOString() : null,
+      payments: [],
       createdAt: new Date().toISOString(),
       userId: user.id,
       ownerEmail: user.email,
@@ -832,6 +990,9 @@ async function handleCreateRecurringBookings(request, response) {
         paymentStatus: normalized.paymentStatus,
         confirmationStatus: normalized.confirmationStatus,
         confirmationText: normalized.confirmationText,
+        confirmationReviewedAt: normalized.confirmationStatus === "reviewed" ? now : null,
+        confirmationSentAt: normalized.confirmationStatus === "sent" ? now : null,
+        payments: [],
         recurrenceId,
         createdAt: now,
         userId: user.id,
@@ -943,6 +1104,19 @@ async function handleUpdateBooking(request, response, bookingId) {
         status: payload.status || booking.status
       };
 
+      if (isStaff(user)) {
+        if (normalized.confirmationStatus === "reviewed" && !updatedBooking.confirmationReviewedAt) {
+          updatedBooking.confirmationReviewedAt = new Date().toISOString();
+        }
+        if (normalized.confirmationStatus === "sent" && !updatedBooking.confirmationSentAt) {
+          updatedBooking.confirmationSentAt = new Date().toISOString();
+        }
+        if (normalized.confirmationStatus === "not-reviewed") {
+          delete updatedBooking.confirmationReviewedAt;
+          delete updatedBooking.confirmationSentAt;
+        }
+      }
+
       if (normalized.selectedClient) {
         updatedBooking.clientId = normalized.selectedClient.id;
         updatedBooking.ownerEmail = normalized.selectedClient.email;
@@ -1008,6 +1182,77 @@ async function handleUpdateBooking(request, response, bookingId) {
   }
 }
 
+async function handleCreateBookingPayment(request, response, bookingId) {
+  const user = requireAuth(request, response);
+  if (!user) {
+    return;
+  }
+
+  if (!isStaff(user)) {
+    sendJson(response, 403, { error: "Only staff can record payments." });
+    return;
+  }
+
+  try {
+    const payload = await parseBody(request);
+    const payment = normalizePaymentPayload(payload, user);
+
+    if (payment.amount <= 0) {
+      sendJson(response, 400, { error: "Payment amount must be greater than zero." });
+      return;
+    }
+
+    const bookings = readBookings();
+    const booking = findBookingById(bookings, bookingId);
+
+    if (!booking) {
+      sendJson(response, 404, { error: "Booking not found." });
+      return;
+    }
+
+    if ((booking.slotType || "reservation") !== "reservation") {
+      sendJson(response, 400, { error: "Payments can only be recorded for reservations." });
+      return;
+    }
+
+    booking.payments = Array.isArray(booking.payments) ? booking.payments : [];
+    booking.payments.push(payment);
+    booking.paymentStatus = "paid";
+
+    const bookingWriteResult = writeBookings(bookings);
+    if (!bookingWriteResult.ok) {
+      sendJson(response, 500, {
+        error: `Unable to save payment right now: ${bookingWriteResult.error.message}`
+      });
+      return;
+    }
+
+    if (booking.clientId) {
+      const clients = readClients();
+      const client = clients.find((item) => item.id === booking.clientId);
+      if (client) {
+        client.payments = Array.isArray(client.payments) ? client.payments : [];
+        client.payments.unshift({
+          ...payment,
+          bookingId: booking.id,
+          description: payment.description || `Court payment for ${booking.date}`
+        });
+        const clientWriteResult = writeClients(clients);
+        if (!clientWriteResult.ok) {
+          sendJson(response, 500, {
+            error: `Payment was saved to the booking, but client history could not be updated: ${clientWriteResult.error.message}`
+          });
+          return;
+        }
+      }
+    }
+
+    sendJson(response, 201, { booking: sanitizeBookingForViewer(booking, user), payment });
+  } catch (error) {
+    sendJson(response, 400, { error: error.message });
+  }
+}
+
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
 
@@ -1033,6 +1278,17 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === "GET" && url.pathname === "/api/clients") {
     handleGetClients(request, response);
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/clients") {
+    await handleCreateClient(request, response);
+    return;
+  }
+
+  if (request.method === "PATCH" && url.pathname.startsWith("/api/clients/")) {
+    const clientId = decodeURIComponent(url.pathname.split("/").pop());
+    await handleUpdateClient(request, response, clientId);
     return;
   }
 
@@ -1072,6 +1328,12 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === "POST" && url.pathname === "/api/recurring-bookings") {
     await handleCreateRecurringBookings(request, response);
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname.startsWith("/api/bookings/") && url.pathname.endsWith("/payments")) {
+    const bookingId = decodeURIComponent(url.pathname.split("/")[3]);
+    await handleCreateBookingPayment(request, response, bookingId);
     return;
   }
 

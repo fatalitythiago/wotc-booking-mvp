@@ -81,6 +81,7 @@
                 </button>
                 <div id="schedulerMenuPanel" class="scheduler-menu-panel hidden" aria-label="Scheduler menu">
                   <button type="button" class="scheduler-menu-action" data-panel-view="bookingSetup">Booking</button>
+                  <button type="button" class="scheduler-menu-action" data-panel-view="search">Search</button>
                   <button type="button" class="scheduler-menu-action" data-panel-view="payments">Payments</button>
                   <button type="button" class="scheduler-menu-action" data-panel-view="rules">Rules</button>
                   <button type="button" class="scheduler-menu-action" data-panel-view="notes">Notes</button>
@@ -136,6 +137,7 @@
                     <div id="playerSuggestions" class="player-suggestions hidden" role="listbox"></div>
                   </div>
                 </label>
+                <button type="button" id="createClientFromBookingButton" class="secondary-button hidden">Create new client</button>
 
                 <label id="slotTypeLabel" class="hidden">
                   Booking type
@@ -183,6 +185,7 @@
                       <select id="confirmationStatus" name="confirmationStatus">
                         <option value="not-reviewed">Not reviewed</option>
                         <option value="reviewed">Reviewed</option>
+                        <option value="sent">Sent manually</option>
                         <option value="not-needed">Not needed</option>
                       </select>
                     </label>
@@ -192,6 +195,7 @@
                     Confirmation text
                     <textarea id="confirmationText" name="confirmationText" rows="3" placeholder="Optional text staff can review before sending"></textarea>
                   </label>
+                  <button type="button" id="generateConfirmationButton" class="secondary-button">Generate confirmation text</button>
 
                   <label id="recurringBookingLabel" class="checkbox-row">
                     <input type="checkbox" id="recurringBooking" name="recurringBooking" />
@@ -207,6 +211,32 @@
                     Cancellation reason
                     <textarea id="cancelReason" name="cancelReason" rows="3" placeholder="Optional reason visible in audit details"></textarea>
                   </label>
+
+                  <section id="paymentEntryPanel" class="payment-entry-panel hidden">
+                    <div class="tool-section-head">
+                      <h3>Record payment</h3>
+                    </div>
+                    <div class="time-row">
+                      <label>
+                        Amount
+                        <input type="number" id="paymentAmount" min="0" step="0.01" placeholder="0.00" />
+                      </label>
+                      <label>
+                        Method
+                        <input type="text" id="paymentMethod" placeholder="Card, cash, check" />
+                      </label>
+                    </div>
+                    <label>
+                      Payment date
+                      <input type="date" id="paymentDate" />
+                    </label>
+                    <label>
+                      Payment note
+                      <textarea id="paymentNote" rows="2" placeholder="Optional staff note"></textarea>
+                    </label>
+                    <button type="button" id="recordPaymentButton" class="secondary-button">Record payment</button>
+                    <div id="bookingPaymentHistory" class="payment-history-list"></div>
+                  </section>
                 </div>
 
                 <div class="form-actions">

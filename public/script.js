@@ -11,6 +11,15 @@ const state = {
   clientSearchQuery: "",
   selectedClientId: null,
   bookingClientId: null,
+  clientFormMode: "idle",
+  bookingSearchQuery: "",
+  bookingSearchStatus: "all",
+  bookingSearchPayment: "all",
+  bookingSearchConfirmation: "all",
+  bookingSearchCourt: "all",
+  bookingSearchStartDate: "",
+  bookingSearchEndDate: "",
+  searchBookings: [],
   editingReservationTypeId: null,
   lastRecurringResult: null
 };
@@ -41,6 +50,7 @@ const PAYMENT_STATUS_LABELS = {
 const CONFIRMATION_STATUS_LABELS = {
   "not-reviewed": "Not reviewed",
   reviewed: "Reviewed",
+  sent: "Sent manually",
   "not-needed": "Not needed"
 };
 
@@ -93,6 +103,10 @@ const PANEL_TOOLS = {
     title: "Clients",
     subtitle: "Look up a client without leaving the scheduler."
   },
+  search: {
+    title: "Search",
+    subtitle: "Find bookings without leaving the scheduler."
+  },
   bookingSetup: {
     title: "Booking Setup",
     subtitle: "Manage how courts are booked, including reservation types, lessons, events, and blocks."
@@ -140,6 +154,7 @@ const playerNameLabel = document.getElementById("playerNameLabel");
 const playerNameLabelText = document.getElementById("playerNameLabelText");
 const playerCombobox = document.getElementById("playerCombobox");
 const playerSuggestions = document.getElementById("playerSuggestions");
+const createClientFromBookingButton = document.getElementById("createClientFromBookingButton");
 const slotTypeLabel = document.getElementById("slotTypeLabel");
 const slotTypeSelect = document.getElementById("slotType");
 const courtSelect = document.getElementById("courtId");
@@ -150,6 +165,14 @@ const staffBookingFields = document.getElementById("staffBookingFields");
 const paymentStatusSelect = document.getElementById("paymentStatus");
 const confirmationStatusSelect = document.getElementById("confirmationStatus");
 const confirmationTextInput = document.getElementById("confirmationText");
+const generateConfirmationButton = document.getElementById("generateConfirmationButton");
+const paymentEntryPanel = document.getElementById("paymentEntryPanel");
+const paymentAmountInput = document.getElementById("paymentAmount");
+const paymentMethodInput = document.getElementById("paymentMethod");
+const paymentDateInput = document.getElementById("paymentDate");
+const paymentNoteInput = document.getElementById("paymentNote");
+const recordPaymentButton = document.getElementById("recordPaymentButton");
+const bookingPaymentHistory = document.getElementById("bookingPaymentHistory");
 const recurringBookingInput = document.getElementById("recurringBooking");
 const recurringBookingLabel = document.getElementById("recurringBookingLabel");
 const recurringWeeksInput = document.getElementById("recurringWeeks");
@@ -393,6 +416,15 @@ function getClientPaymentSummary(client) {
   };
 }
 
+function getBookingPayments(booking) {
+  return Array.isArray(booking?.payments) ? booking.payments : [];
+}
+
+function getBookingPaymentTotal(booking) {
+  return getBookingPayments(booking)
+    .reduce((total, payment) => total + Number(payment.amount || 0), 0);
+}
+
 function renderClientPayments(client) {
   const payments = Array.isArray(client.payments) ? client.payments : [];
   const heading = document.createElement("h3");
@@ -436,6 +468,164 @@ function renderClientPayments(client) {
   });
 
   toolPanel.appendChild(list);
+}
+
+function getClientFormValues(client = {}) {
+  const address = client.address && typeof client.address === "object" ? client.address : {};
+  return {
+    name: client.name || "",
+    email: client.email || "",
+    phone: client.phone || "",
+    status: client.status || "Active",
+    membershipStatus: client.membershipStatus || "Not set",
+    membershipType: client.membershipType || "Not set",
+    packageBalance: client.packageBalance == null ? 0 : client.packageBalance,
+    packageNotes: client.packageNotes || "",
+    street: address.street || "",
+    city: address.city || "",
+    state: address.state || "NJ",
+    zip: address.zip || "",
+    noteText: ""
+  };
+}
+
+function renderClientForm(client = null) {
+  const values = getClientFormValues(client || {});
+  if (!client && state.clientSearchQuery) {
+    values.name = state.clientSearchQuery;
+  }
+  const form = document.createElement("form");
+  form.className = "client-edit-form";
+  form.innerHTML = `
+    <div class="tool-section-head">
+      <div>
+        <h3>${client ? "Edit client" : "Create client"}</h3>
+        ${client ? `<p class="muted form-context">Editing ${escapeHtml(client.name)}</p>` : ""}
+      </div>
+      <button type="button" class="ghost-button" data-client-form-cancel>Close</button>
+    </div>
+    <label>
+      Name
+      <input type="text" name="name" required />
+    </label>
+    <label>
+      Email
+      <input type="email" name="email" />
+    </label>
+    <label>
+      Phone
+      <input type="text" name="phone" />
+    </label>
+    <div class="time-row">
+      <label>
+        Status
+        <input type="text" name="status" />
+      </label>
+      <label>
+        Membership
+        <input type="text" name="membershipStatus" />
+      </label>
+    </div>
+    <label>
+      Membership type
+      <input type="text" name="membershipType" />
+    </label>
+    <div class="time-row">
+      <label>
+        Package balance
+        <input type="number" name="packageBalance" min="0" step="1" />
+      </label>
+      <label>
+        Zip
+        <input type="text" name="zip" />
+      </label>
+    </div>
+    <label>
+      Package notes
+      <textarea name="packageNotes" rows="2"></textarea>
+    </label>
+    <label>
+      Street
+      <input type="text" name="street" />
+    </label>
+    <div class="time-row">
+      <label>
+        City
+        <input type="text" name="city" />
+      </label>
+      <label>
+        State
+        <input type="text" name="state" />
+      </label>
+    </div>
+    <label>
+      Add note
+      <textarea name="noteText" rows="2" placeholder="Optional new note"></textarea>
+    </label>
+    <div class="form-actions">
+      <button type="submit">${client ? "Save client" : "Create client"}</button>
+    </div>
+    <p class="message" aria-live="polite"></p>
+  `;
+
+  Object.entries(values).forEach(([name, value]) => {
+    const field = form.elements.namedItem(name);
+    if (field) {
+      field.value = value;
+    }
+  });
+
+  form.addEventListener("submit", (event) => handleClientFormSubmit(event, client));
+  form.querySelector("[data-client-form-cancel]").addEventListener("click", () => {
+    state.clientFormMode = "idle";
+    renderToolPanel();
+  });
+  toolPanel.appendChild(form);
+}
+
+function getClientFormPayload(form) {
+  const fields = form.elements;
+  return {
+    name: fields.namedItem("name").value,
+    email: fields.namedItem("email").value,
+    phone: fields.namedItem("phone").value,
+    status: fields.namedItem("status").value,
+    membershipStatus: fields.namedItem("membershipStatus").value,
+    membershipType: fields.namedItem("membershipType").value,
+    packageBalance: fields.namedItem("packageBalance").value,
+    packageNotes: fields.namedItem("packageNotes").value,
+    address: {
+      street: fields.namedItem("street").value,
+      city: fields.namedItem("city").value,
+      state: fields.namedItem("state").value,
+      zip: fields.namedItem("zip").value
+    },
+    noteText: fields.namedItem("noteText").value
+  };
+}
+
+async function handleClientFormSubmit(event, client = null) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const message = form.querySelector(".message");
+  setMessage(message, "");
+
+  try {
+    const url = client ? `/api/clients/${encodeURIComponent(client.id)}` : "/api/clients";
+    const method = client ? "PATCH" : "POST";
+    const payload = await fetchJson(url, {
+      method,
+      body: JSON.stringify(getClientFormPayload(form))
+    });
+    await loadClients();
+    state.selectedClientId = payload.client.id;
+    state.clientSearchQuery = payload.client.name;
+    state.clientFormMode = "idle";
+    renderToolPanel();
+    setMessage(formMessage, client ? "Client updated." : "Client created.", "success");
+  } catch (error) {
+    setMessage(message, error.message, "error");
+  }
 }
 
 function renderClientBookingSummary(clientBookings) {
@@ -520,6 +710,44 @@ function renderClientMembership(client) {
 }
 
 function renderClientsTool() {
+  const actionRow = document.createElement("div");
+  actionRow.className = "tool-action-row";
+
+  const newClientButton = document.createElement("button");
+  newClientButton.type = "button";
+  newClientButton.className = "secondary-button";
+  newClientButton.textContent = "New client";
+  newClientButton.addEventListener("click", () => {
+    state.clientFormMode = "new";
+    renderToolPanel();
+  });
+  actionRow.appendChild(newClientButton);
+
+  const selectedForEdit = getSelectedClient();
+  if (selectedForEdit) {
+    const editClientButton = document.createElement("button");
+    editClientButton.type = "button";
+    editClientButton.className = "secondary-button";
+    editClientButton.textContent = "Edit client";
+    editClientButton.addEventListener("click", () => {
+      state.clientFormMode = "edit";
+      renderToolPanel();
+    });
+    actionRow.appendChild(editClientButton);
+  }
+
+  toolPanel.appendChild(actionRow);
+
+  if (state.clientFormMode === "new") {
+    renderClientForm();
+    return;
+  }
+
+  if (state.clientFormMode === "edit" && selectedForEdit) {
+    renderClientForm(selectedForEdit);
+    return;
+  }
+
   const searchLabel = document.createElement("label");
   searchLabel.className = "tool-search";
   searchLabel.textContent = "Client search";
@@ -620,6 +848,174 @@ function renderClientsTool() {
   renderClientPayments(selectedClient);
 }
 
+function bookingMatchesSearchFilters(booking) {
+  const query = state.bookingSearchQuery.trim().toLowerCase();
+  const date = booking.date || "";
+  const searchableText = [
+    booking.displayName,
+    booking.playerName,
+    booking.ownerEmail,
+    booking.notes,
+    booking.reservationTypeName,
+    getCourtName(booking.courtId)
+  ].join(" ").toLowerCase();
+
+  if (query && !searchableText.includes(query)) {
+    return false;
+  }
+
+  if (state.bookingSearchStartDate && date < state.bookingSearchStartDate) {
+    return false;
+  }
+
+  if (state.bookingSearchEndDate && date > state.bookingSearchEndDate) {
+    return false;
+  }
+
+  if (state.bookingSearchStatus !== "all" && booking.status !== state.bookingSearchStatus) {
+    return false;
+  }
+
+  if (state.bookingSearchPayment !== "all" &&
+      (booking.paymentStatus || (booking.slotType === "reservation" ? "unpaid" : "not-required")) !== state.bookingSearchPayment) {
+    return false;
+  }
+
+  if (state.bookingSearchConfirmation !== "all" &&
+      (booking.confirmationStatus || (booking.slotType === "reservation" ? "not-reviewed" : "not-needed")) !== state.bookingSearchConfirmation) {
+    return false;
+  }
+
+  if (state.bookingSearchCourt !== "all" && booking.courtId !== state.bookingSearchCourt) {
+    return false;
+  }
+
+  return true;
+}
+
+function renderBookingSearchTool() {
+  const form = document.createElement("div");
+  form.className = "booking-search-form";
+  form.innerHTML = `
+    <label>
+      Search
+      <input type="search" data-booking-search="query" placeholder="Client, notes, court, or type" />
+    </label>
+    <div class="time-row">
+      <label>
+        From
+        <input type="date" data-booking-search="startDate" />
+      </label>
+      <label>
+        To
+        <input type="date" data-booking-search="endDate" />
+      </label>
+    </div>
+    <div class="time-row">
+      <label>
+        Status
+        <select data-booking-search="status">
+          <option value="all">All</option>
+          <option value="active">Active</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </label>
+      <label>
+        Court
+        <select data-booking-search="court">
+          <option value="all">All courts</option>
+        </select>
+      </label>
+    </div>
+    <div class="time-row">
+      <label>
+        Payment
+        <select data-booking-search="payment">
+          <option value="all">All</option>
+          <option value="unpaid">Unpaid</option>
+          <option value="paid">Paid</option>
+          <option value="not-required">Not required</option>
+        </select>
+      </label>
+      <label>
+        Confirmation
+        <select data-booking-search="confirmation">
+          <option value="all">All</option>
+          <option value="not-reviewed">Not reviewed</option>
+          <option value="reviewed">Reviewed</option>
+          <option value="sent">Sent manually</option>
+          <option value="not-needed">Not needed</option>
+        </select>
+      </label>
+    </div>
+    <button type="button" class="secondary-button" data-booking-search-apply>Apply filters</button>
+  `;
+
+  const courtSelectInput = form.querySelector('[data-booking-search="court"]');
+  state.courts.forEach((court) => {
+    const option = document.createElement("option");
+    option.value = court.id;
+    option.textContent = court.name;
+    courtSelectInput.appendChild(option);
+  });
+
+  form.querySelector('[data-booking-search="query"]').value = state.bookingSearchQuery;
+  form.querySelector('[data-booking-search="startDate"]').value = state.bookingSearchStartDate;
+  form.querySelector('[data-booking-search="endDate"]').value = state.bookingSearchEndDate;
+  form.querySelector('[data-booking-search="status"]').value = state.bookingSearchStatus;
+  form.querySelector('[data-booking-search="payment"]').value = state.bookingSearchPayment;
+  form.querySelector('[data-booking-search="confirmation"]').value = state.bookingSearchConfirmation;
+  courtSelectInput.value = state.bookingSearchCourt;
+
+  form.querySelector("[data-booking-search-apply]").addEventListener("click", () => {
+    state.bookingSearchQuery = form.querySelector('[data-booking-search="query"]').value;
+    state.bookingSearchStartDate = form.querySelector('[data-booking-search="startDate"]').value;
+    state.bookingSearchEndDate = form.querySelector('[data-booking-search="endDate"]').value;
+    state.bookingSearchStatus = form.querySelector('[data-booking-search="status"]').value;
+    state.bookingSearchPayment = form.querySelector('[data-booking-search="payment"]').value;
+    state.bookingSearchConfirmation = form.querySelector('[data-booking-search="confirmation"]').value;
+    state.bookingSearchCourt = courtSelectInput.value;
+    renderToolPanel();
+  });
+
+  toolPanel.appendChild(form);
+
+  const results = state.searchBookings
+    .filter(bookingMatchesSearchFilters)
+    .sort((first, second) =>
+      first.date.localeCompare(second.date) ||
+      first.startTime.localeCompare(second.startTime) ||
+      first.courtId.localeCompare(second.courtId)
+    );
+
+  toolPanel.appendChild(renderInfoList([
+    { label: "Results", value: String(results.length) },
+    { label: "Loaded bookings", value: String(state.searchBookings.length) }
+  ]));
+
+  const list = document.createElement("div");
+  list.className = "client-booking-list";
+
+  if (results.length === 0) {
+    const emptyState = document.createElement("p");
+    emptyState.className = "muted empty-state";
+    emptyState.textContent = "No bookings match those filters.";
+    list.appendChild(emptyState);
+  } else {
+    results.slice(0, 50).forEach((booking) => {
+      const row = makeBookingActionRow(booking);
+      row.innerHTML = `
+        <strong>${escapeHtml(booking.displayName || booking.playerName || "Unknown")}</strong>
+        <span>${escapeHtml(booking.date)} · ${getCourtName(booking.courtId)} · ${formatTimeLabel(booking.startTime)} - ${formatTimeLabel(booking.endTime)}</span>
+        <span>${getBookingTypeLabel(booking)} · ${booking.status} · ${getPaymentStatusLabel(booking.paymentStatus || "unpaid")} · ${getConfirmationStatusLabel(booking.confirmationStatus || "not-reviewed")}</span>
+      `;
+      list.appendChild(row);
+    });
+  }
+
+  toolPanel.appendChild(list);
+}
+
 function renderPaymentsTool() {
   const activeBookings = state.bookings.filter((booking) => booking.status === "active");
   const reservations = activeBookings.filter((booking) => booking.slotType === "reservation");
@@ -627,11 +1023,17 @@ function renderPaymentsTool() {
   const unpaidBookings = reservations.filter((booking) =>
     (booking.paymentStatus || "unpaid") === "unpaid"
   );
+  const paidBookings = reservations.filter((booking) =>
+    (booking.paymentStatus || "unpaid") === "paid"
+  );
+  const collectedTotal = reservations.reduce((total, booking) => total + getBookingPaymentTotal(booking), 0);
 
   toolPanel.appendChild(renderInfoList([
     { label: "Active reservations", value: String(reservations.length) },
     { label: "Managed slots", value: String(managedSlots.length) },
-    { label: "Unpaid courts", value: String(unpaidBookings.length) }
+    { label: "Unpaid courts", value: String(unpaidBookings.length) },
+    { label: "Paid courts", value: String(paidBookings.length) },
+    { label: "Recorded payments", value: formatMoney(collectedTotal) }
   ]));
 
   const list = document.createElement("div");
@@ -1020,18 +1422,64 @@ function renderReportsTool() {
   const reservations = activeBookings.filter((booking) => booking.slotType === "reservation");
   const managedSlots = activeBookings.filter((booking) => booking.slotType !== "reservation");
   const unpaidBookings = reservations.filter((booking) => (booking.paymentStatus || "unpaid") === "unpaid");
+  const paidBookings = reservations.filter((booking) => (booking.paymentStatus || "unpaid") === "paid");
   const staffCreated = state.bookings.filter((booking) => booking.createdByRole === "staff");
   const clientCreated = state.bookings.filter((booking) => booking.createdByRole === "client");
+  const collectedTotal = reservations.reduce((total, booking) => total + getBookingPaymentTotal(booking), 0);
+  const notReviewed = reservations.filter((booking) => (booking.confirmationStatus || "not-reviewed") === "not-reviewed");
+  const reviewed = reservations.filter((booking) => booking.confirmationStatus === "reviewed");
+  const sent = reservations.filter((booking) => booking.confirmationStatus === "sent");
 
   toolPanel.appendChild(renderInfoList([
-    { label: "Total items", value: String(state.bookings.length) },
+    { label: "Closing date", value: datePicker.value },
+    { label: "Total scheduler items", value: String(state.bookings.length) },
     { label: "Active reservations", value: String(reservations.length) },
     { label: "Managed slots", value: String(managedSlots.length) },
     { label: "Cancelled", value: String(cancelledBookings.length) },
     { label: "Unpaid courts", value: String(unpaidBookings.length) },
+    { label: "Paid courts", value: String(paidBookings.length) },
+    { label: "Recorded payment total", value: formatMoney(collectedTotal) },
+    { label: "Confirmations not reviewed", value: String(notReviewed.length) },
+    { label: "Confirmations reviewed", value: String(reviewed.length) },
+    { label: "Confirmations sent manually", value: String(sent.length) },
     { label: "Staff-created items", value: String(staffCreated.length) },
     { label: "Client-created items", value: String(clientCreated.length) }
   ]));
+
+  const sections = [
+    { title: "Reservations", bookings: reservations },
+    { title: "Managed blocks", bookings: managedSlots },
+    { title: "Cancelled", bookings: cancelledBookings }
+  ];
+
+  sections.forEach((section) => {
+    const heading = document.createElement("h3");
+    heading.textContent = section.title;
+    toolPanel.appendChild(heading);
+
+    const list = document.createElement("div");
+    list.className = "client-booking-list";
+    if (section.bookings.length === 0) {
+      const emptyState = document.createElement("p");
+      emptyState.className = "muted empty-state";
+      emptyState.textContent = `No ${section.title.toLowerCase()} for this date.`;
+      list.appendChild(emptyState);
+    } else {
+      section.bookings
+        .slice()
+        .sort((first, second) => first.startTime.localeCompare(second.startTime) || first.courtId.localeCompare(second.courtId))
+        .forEach((booking) => {
+          const row = makeBookingActionRow(booking);
+          row.innerHTML = `
+            <strong>${escapeHtml(booking.displayName || booking.playerName || "Unknown")}</strong>
+            <span>${getCourtName(booking.courtId)} · ${formatTimeLabel(booking.startTime)} - ${formatTimeLabel(booking.endTime)} · ${getBookingTypeLabel(booking)}</span>
+            <span>${getPaymentStatusLabel(booking.paymentStatus || (booking.slotType === "reservation" ? "unpaid" : "not-required"))} · ${getConfirmationStatusLabel(booking.confirmationStatus || (booking.slotType === "reservation" ? "not-reviewed" : "not-needed"))} · ${formatMoney(getBookingPaymentTotal(booking))}</span>
+          `;
+          list.appendChild(row);
+        });
+    }
+    toolPanel.appendChild(list);
+  });
 }
 
 function renderAuditTool() {
@@ -1107,6 +1555,8 @@ function renderToolPanel() {
 
   if (state.activePanelView === "clients") {
     renderClientsTool();
+  } else if (state.activePanelView === "search") {
+    renderBookingSearchTool();
   } else if (state.activePanelView === "bookingSetup") {
     renderBookingSetupTool();
   } else if (state.activePanelView === "payments") {
@@ -1213,8 +1663,10 @@ function renderUser() {
 
   if (state.user.role === "staff") {
     slotTypeLabel.classList.remove("hidden");
+    createClientFromBookingButton.classList.remove("hidden");
   } else {
     slotTypeLabel.classList.add("hidden");
+    createClientFromBookingButton.classList.add("hidden");
     slotTypeSelect.value = DEFAULT_BOOKING_TYPE.slotType;
   }
 
@@ -1441,6 +1893,12 @@ function resetBookingForm() {
   paymentStatusSelect.value = "unpaid";
   confirmationStatusSelect.value = "not-reviewed";
   confirmationTextInput.value = "";
+  paymentEntryPanel.classList.add("hidden");
+  paymentAmountInput.value = "";
+  paymentMethodInput.value = "";
+  paymentDateInput.value = datePicker.value;
+  paymentNoteInput.value = "";
+  renderBookingPaymentHistory(null);
   recurringBookingInput.checked = false;
   recurringWeeksInput.value = "4";
   cancelReasonInput.value = "";
@@ -1595,6 +2053,12 @@ function loadBookingIntoForm(booking) {
   paymentStatusSelect.value = booking.paymentStatus || (isManagedSlot ? "not-required" : "unpaid");
   confirmationStatusSelect.value = booking.confirmationStatus || (isManagedSlot ? "not-needed" : "not-reviewed");
   confirmationTextInput.value = booking.confirmationText || "";
+  paymentDateInput.value = getToday();
+  paymentEntryPanel.classList.toggle(
+    "hidden",
+    state.user.role !== "staff" || isManagedSlot || booking.status !== "active"
+  );
+  renderBookingPaymentHistory(booking);
   recurringBookingInput.checked = false;
   recurringWeeksLabel.classList.add("hidden");
   cancelReasonInput.value = "";
@@ -1759,6 +2223,78 @@ function renderAgenda() {
   });
 }
 
+function renderBookingPaymentHistory(booking = null) {
+  bookingPaymentHistory.innerHTML = "";
+  const payments = getBookingPayments(booking);
+
+  if (!booking) {
+    return;
+  }
+
+  if (payments.length === 0) {
+    const emptyState = document.createElement("p");
+    emptyState.className = "muted empty-state";
+    emptyState.textContent = "No payments recorded for this booking.";
+    bookingPaymentHistory.appendChild(emptyState);
+    return;
+  }
+
+  payments.forEach((payment) => {
+    const row = document.createElement("div");
+    row.className = "payment-history-row";
+    const details = document.createElement("div");
+    const title = document.createElement("strong");
+    const meta = document.createElement("span");
+    title.textContent = payment.description || "Court payment";
+    meta.textContent = `${payment.date || "No date"} · ${payment.method || "Method not set"} · ${payment.status || "Paid"}`;
+    details.append(title, meta);
+
+    const amount = document.createElement("strong");
+    amount.textContent = formatMoney(payment.amount);
+    row.append(details, amount);
+    bookingPaymentHistory.appendChild(row);
+  });
+}
+
+function buildConfirmationText() {
+  const player = playerNameInput.value.trim() || "your reservation";
+  const court = courtSelect.options[courtSelect.selectedIndex]?.textContent || "your court";
+  return `Confirmation: ${player} is booked on ${bookingDateInput.value} from ${formatTimeLabel(startTimeSelect.value)} to ${formatTimeLabel(endTimeSelect.value)} on ${court}.`;
+}
+
+async function handleRecordPayment() {
+  const bookingId = bookingIdInput.value;
+  if (!bookingId) {
+    setMessage(formMessage, "Save the booking before recording a payment.", "error");
+    return;
+  }
+
+  try {
+    const payload = await fetchJson(`/api/bookings/${encodeURIComponent(bookingId)}/payments`, {
+      method: "POST",
+      body: JSON.stringify({
+        amount: paymentAmountInput.value,
+        method: paymentMethodInput.value,
+        date: paymentDateInput.value,
+        description: `Court payment for ${bookingDateInput.value}`,
+        notes: paymentNoteInput.value
+      })
+    });
+    paymentAmountInput.value = "";
+    paymentMethodInput.value = "";
+    paymentNoteInput.value = "";
+    await loadClients();
+    await loadBookings();
+    const savedBooking = state.bookings.find((booking) => booking.id === payload.booking.id);
+    if (savedBooking) {
+      loadBookingIntoForm(savedBooking);
+    }
+    setMessage(formMessage, "Payment recorded.", "success");
+  } catch (error) {
+    setMessage(formMessage, error.message, "error");
+  }
+}
+
 async function loadCourts() {
   const payload = await fetchJson("/api/courts");
   state.courts = payload.courts;
@@ -1799,6 +2335,16 @@ async function loadBookings() {
   renderToolPanel();
 }
 
+async function loadSearchBookings() {
+  if (state.user?.role !== "staff") {
+    state.searchBookings = [];
+    return;
+  }
+
+  const payload = await fetchJson("/api/bookings");
+  state.searchBookings = payload.bookings;
+}
+
 function setSchedulerMenuOpen(isOpen) {
   if (isOpen && state.openSlotMenu) {
     state.openSlotMenu = null;
@@ -1813,12 +2359,15 @@ function setSchedulerMenuOpen(isOpen) {
   );
 }
 
-function handleSchedulerToolClick(view) {
+async function handleSchedulerToolClick(view) {
   if (!PANEL_TOOLS[view]) {
     return;
   }
 
   state.openSlotMenu = null;
+  if (view === "search") {
+    await loadSearchBookings();
+  }
   setActivePanelView(view);
   setSidePanelCollapsed(false);
   setSchedulerMenuOpen(false);
@@ -1978,6 +2527,13 @@ async function init() {
   loginForm.addEventListener("submit", handleLoginSubmit);
   logoutButton.addEventListener("click", handleLogout);
   bookingForm.addEventListener("submit", handleBookingSubmit);
+  generateConfirmationButton.addEventListener("click", () => {
+    confirmationTextInput.value = buildConfirmationText();
+    if (confirmationStatusSelect.value === "not-reviewed") {
+      confirmationStatusSelect.value = "reviewed";
+    }
+  });
+  recordPaymentButton.addEventListener("click", handleRecordPayment);
   sidePanelToggle.addEventListener("click", () => {
     const isCollapsed = schedulerWorkspace.classList.contains("side-panel-collapsed");
     if (isCollapsed && state.user?.role === "staff" && state.activePanelView === "booking") {
@@ -2016,6 +2572,15 @@ async function init() {
     if (state.user?.role === "staff") {
       handleSchedulerToolClick("clients");
     }
+  });
+  createClientFromBookingButton.addEventListener("click", () => {
+    if (state.user?.role !== "staff") {
+      return;
+    }
+
+    state.clientFormMode = "new";
+    state.clientSearchQuery = playerNameInput.value.trim();
+    handleSchedulerToolClick("clients");
   });
   datePicker.addEventListener("change", async () => {
     syncBookingDateWithPicker();

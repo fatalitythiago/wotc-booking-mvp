@@ -816,6 +816,26 @@ button:hover {
   gap: 10px;
 }
 
+.tool-action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.client-edit-form,
+.booking-search-form,
+.payment-entry-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.payment-entry-panel {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbfdff;
+}
+
 .client-tool-card {
   display: grid;
   gap: 4px;
