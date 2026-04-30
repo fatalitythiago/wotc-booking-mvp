@@ -8,6 +8,7 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const BOOKINGS_FILE = path.join(__dirname, "data", "bookings.json");
 const CLIENTS_FILE = path.join(__dirname, "data", "clients.json");
 const USERS_FILE = path.join(__dirname, "data", "users.json");
+const RESERVATION_TYPES_FILE = path.join(__dirname, "data", "reservation-types.json");
 const SESSION_COOKIE_NAME = "court_booking_session";
 const VALID_PAYMENT_STATUSES = new Set(["paid", "unpaid", "not-required"]);
 const VALID_CONFIRMATION_STATUSES = new Set(["not-reviewed", "reviewed", "not-needed"]);
@@ -83,6 +84,15 @@ function readUsers() {
   }
 
   return validUsers;
+}
+
+function readReservationTypes() {
+  return readJsonArray(RESERVATION_TYPES_FILE, "reservation types")
+    .filter((item) => item && typeof item.id === "string" && typeof item.name === "string");
+}
+
+function writeReservationTypes(reservationTypes) {
+  return writeJsonArray(RESERVATION_TYPES_FILE, "reservation types", reservationTypes);
 }
 
 function findUserById(userId) {
@@ -198,6 +208,55 @@ function normalizeChoice(value, allowed, fallback) {
   return allowed.has(normalized) ? normalized : fallback;
 }
 
+function parsePositiveNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function slugifyReservationTypeName(name) {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+function normalizeReservationTypePayload(payload, existingReservationType = null) {
+  const name = String(payload.name || existingReservationType?.name || "").trim();
+  const minDuration = parsePositiveNumber(payload.minDuration, existingReservationType?.minDuration || 60);
+  const maxDuration = Math.max(
+    minDuration,
+    parsePositiveNumber(payload.maxDuration, existingReservationType?.maxDuration || minDuration)
+  );
+  const defaultDuration = Math.min(
+    maxDuration,
+    Math.max(minDuration, parsePositiveNumber(payload.defaultDuration, existingReservationType?.defaultDuration || minDuration))
+  );
+  const minPlayers = parsePositiveNumber(payload.minPlayers, existingReservationType?.minPlayers || 1);
+  const maxPlayers = Math.max(
+    minPlayers,
+    parsePositiveNumber(payload.maxPlayers, existingReservationType?.maxPlayers || minPlayers)
+  );
+  const color = /^#[0-9a-f]{6}$/i.test(String(payload.color || ""))
+    ? String(payload.color).trim()
+    : existingReservationType?.color || "#1492cf";
+
+  return {
+    id: existingReservationType?.id || `${slugifyReservationTypeName(name) || "reservation-type"}-${randomUUID().slice(0, 8)}`,
+    name,
+    minDuration,
+    maxDuration,
+    defaultDuration,
+    isPublic: Boolean(payload.isPublic ?? existingReservationType?.isPublic ?? false),
+    feeResponsibility: String(payload.feeResponsibility || existingReservationType?.feeResponsibility || "Reservation Owner").trim(),
+    minPlayers,
+    maxPlayers,
+    guests: String(payload.guests || existingReservationType?.guests || "Not set").trim(),
+    color
+  };
+}
+
 function addDays(dateText, days) {
   const date = new Date(`${dateText}T12:00:00`);
   date.setDate(date.getDate() + days);
@@ -266,6 +325,12 @@ function normalizeBookingPayload(payload, user, existingBooking = null) {
     : isStaff(user)
     ? String(payload.playerName || existingBooking?.playerName || "").trim()
     : user.name;
+  const reservationTypeId = isStaff(user) && slotType === "reservation" && typeof payload.reservationTypeId === "string"
+    ? payload.reservationTypeId.trim()
+    : existingBooking?.reservationTypeId || "";
+  const reservationType = reservationTypeId
+    ? readReservationTypes().find((item) => item.id === reservationTypeId) || null
+    : null;
 
   return {
     date: payload.date || existingBooking?.date,
@@ -276,6 +341,22 @@ function normalizeBookingPayload(payload, user, existingBooking = null) {
     notes: typeof payload.notes === "string" ? payload.notes.trim() : existingBooking?.notes || "",
     slotType,
     slotLabel,
+    reservationType,
+    reservationTypeId: reservationType
+      ? reservationType.id
+      : reservationTypeId && existingBooking?.reservationTypeId === reservationTypeId
+        ? existingBooking.reservationTypeId
+        : "",
+    reservationTypeName: reservationType
+      ? reservationType.name
+      : reservationTypeId
+        ? existingBooking?.reservationTypeName || ""
+        : "",
+    reservationTypeColor: reservationType
+      ? reservationType.color
+      : reservationTypeId
+        ? existingBooking?.reservationTypeColor || ""
+        : "",
     selectedClient,
     paymentStatus: normalizeChoice(
       payload.paymentStatus || existingBooking?.paymentStatus,
@@ -323,6 +404,9 @@ function sanitizeBookingForViewer(booking, viewer) {
     slotType,
     slotLabel,
     createdAt: booking.createdAt,
+    reservationTypeId: booking.reservationTypeId || null,
+    reservationTypeName: booking.reservationTypeName || "",
+    reservationTypeColor: booking.reservationTypeColor || "",
     cancelledAt: booking.cancelledAt || null,
     cancelledBy: canViewDetails ? booking.cancelledBy || null : null,
     cancelReason: canViewDetails ? booking.cancelReason || "" : "",
@@ -431,6 +515,130 @@ function handleGetClients(request, response) {
   });
 }
 
+function handleGetReservationTypes(request, response) {
+  const user = requireAuth(request, response);
+  if (!user) {
+    return;
+  }
+
+  if (!isStaff(user)) {
+    sendJson(response, 403, { error: "Only staff can manage reservation types." });
+    return;
+  }
+
+  sendJson(response, 200, { reservationTypes: readReservationTypes() });
+}
+
+async function handleCreateReservationType(request, response) {
+  const user = requireAuth(request, response);
+  if (!user) {
+    return;
+  }
+
+  if (!isStaff(user)) {
+    sendJson(response, 403, { error: "Only staff can manage reservation types." });
+    return;
+  }
+
+  try {
+    const payload = await parseBody(request);
+    const reservationType = normalizeReservationTypePayload(payload);
+
+    if (!reservationType.name) {
+      sendJson(response, 400, { error: "Reservation type name is required." });
+      return;
+    }
+
+    const reservationTypes = readReservationTypes();
+    reservationTypes.push(reservationType);
+
+    const writeResult = writeReservationTypes(reservationTypes);
+    if (!writeResult.ok) {
+      sendJson(response, 500, {
+        error: `Unable to save reservation type right now: ${writeResult.error.message}`
+      });
+      return;
+    }
+
+    sendJson(response, 201, { reservationType });
+  } catch (error) {
+    sendJson(response, 400, { error: error.message });
+  }
+}
+
+async function handleUpdateReservationType(request, response, reservationTypeId) {
+  const user = requireAuth(request, response);
+  if (!user) {
+    return;
+  }
+
+  if (!isStaff(user)) {
+    sendJson(response, 403, { error: "Only staff can manage reservation types." });
+    return;
+  }
+
+  try {
+    const payload = await parseBody(request);
+    const reservationTypes = readReservationTypes();
+    const currentIndex = reservationTypes.findIndex((item) => item.id === reservationTypeId);
+
+    if (currentIndex === -1) {
+      sendJson(response, 404, { error: "Reservation type not found." });
+      return;
+    }
+
+    const reservationType = normalizeReservationTypePayload(payload, reservationTypes[currentIndex]);
+
+    if (!reservationType.name) {
+      sendJson(response, 400, { error: "Reservation type name is required." });
+      return;
+    }
+
+    reservationTypes[currentIndex] = reservationType;
+    const writeResult = writeReservationTypes(reservationTypes);
+    if (!writeResult.ok) {
+      sendJson(response, 500, {
+        error: `Unable to update reservation type right now: ${writeResult.error.message}`
+      });
+      return;
+    }
+
+    sendJson(response, 200, { reservationType });
+  } catch (error) {
+    sendJson(response, 400, { error: error.message });
+  }
+}
+
+function handleDeleteReservationType(request, response, reservationTypeId) {
+  const user = requireAuth(request, response);
+  if (!user) {
+    return;
+  }
+
+  if (!isStaff(user)) {
+    sendJson(response, 403, { error: "Only staff can manage reservation types." });
+    return;
+  }
+
+  const reservationTypes = readReservationTypes();
+  const nextReservationTypes = reservationTypes.filter((item) => item.id !== reservationTypeId);
+
+  if (nextReservationTypes.length === reservationTypes.length) {
+    sendJson(response, 404, { error: "Reservation type not found." });
+    return;
+  }
+
+  const writeResult = writeReservationTypes(nextReservationTypes);
+  if (!writeResult.ok) {
+    sendJson(response, 500, {
+      error: `Unable to delete reservation type right now: ${writeResult.error.message}`
+    });
+    return;
+  }
+
+  sendJson(response, 200, { ok: true });
+}
+
 function handleGetBookings(request, response) {
   const user = requireAuth(request, response);
   if (!user) {
@@ -487,6 +695,11 @@ async function handleCreateBooking(request, response) {
     }
     const normalized = normalizeBookingPayload(payload, user);
 
+    if (payload.reservationTypeId && !normalized.reservationType) {
+      sendJson(response, 400, { error: "Selected reservation type does not exist." });
+      return;
+    }
+
     if (!normalized.playerName) {
       sendJson(response, 400, { error: "Player name is required." });
       return;
@@ -503,6 +716,9 @@ async function handleCreateBooking(request, response) {
       status: "active",
       slotType: normalized.slotType,
       slotLabel: normalized.slotLabel,
+      reservationTypeId: normalized.reservationTypeId,
+      reservationTypeName: normalized.reservationTypeName,
+      reservationTypeColor: normalized.reservationTypeColor,
       paymentStatus: normalized.paymentStatus,
       confirmationStatus: normalized.confirmationStatus,
       confirmationText: normalized.confirmationText,
@@ -575,6 +791,11 @@ async function handleCreateRecurringBookings(request, response) {
       return;
     }
 
+    if (payload.reservationTypeId && !normalized.reservationType) {
+      sendJson(response, 400, { error: "Selected reservation type does not exist." });
+      return;
+    }
+
     if (!COURTS.some((court) => court.id === normalized.courtId)) {
       sendJson(response, 400, { error: "Selected court does not exist." });
       return;
@@ -605,6 +826,9 @@ async function handleCreateRecurringBookings(request, response) {
         status: "active",
         slotType: "reservation",
         slotLabel: "Reservation",
+        reservationTypeId: normalized.reservationTypeId,
+        reservationTypeName: normalized.reservationTypeName,
+        reservationTypeColor: normalized.reservationTypeColor,
         paymentStatus: normalized.paymentStatus,
         confirmationStatus: normalized.confirmationStatus,
         confirmationText: normalized.confirmationText,
@@ -693,6 +917,13 @@ async function handleUpdateBooking(request, response, bookingId) {
         return;
       }
       const normalized = normalizeBookingPayload(payload, user, booking);
+
+      if (payload.reservationTypeId && !normalized.reservationType &&
+          payload.reservationTypeId !== booking.reservationTypeId) {
+        sendJson(response, 400, { error: "Selected reservation type does not exist." });
+        return;
+      }
+
       const updatedBooking = {
         ...booking,
         date: normalized.date,
@@ -703,6 +934,9 @@ async function handleUpdateBooking(request, response, bookingId) {
         playerName: normalized.playerName,
         slotType: normalized.slotType,
         slotLabel: normalized.slotLabel,
+        reservationTypeId: normalized.reservationTypeId,
+        reservationTypeName: normalized.reservationTypeName,
+        reservationTypeColor: normalized.reservationTypeColor,
         paymentStatus: isStaff(user) ? normalized.paymentStatus : booking.paymentStatus,
         confirmationStatus: isStaff(user) ? normalized.confirmationStatus : booking.confirmationStatus,
         confirmationText: isStaff(user) ? normalized.confirmationText : booking.confirmationText,
@@ -716,6 +950,9 @@ async function handleUpdateBooking(request, response, bookingId) {
         delete updatedBooking.clientId;
       } else if (normalized.slotType !== "reservation") {
         delete updatedBooking.clientId;
+        delete updatedBooking.reservationTypeId;
+        delete updatedBooking.reservationTypeName;
+        delete updatedBooking.reservationTypeColor;
       }
 
       if (!updatedBooking.playerName) {
@@ -797,6 +1034,30 @@ const server = http.createServer(async (request, response) => {
   if (request.method === "GET" && url.pathname === "/api/clients") {
     handleGetClients(request, response);
     return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/reservation-types") {
+    handleGetReservationTypes(request, response);
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/reservation-types") {
+    await handleCreateReservationType(request, response);
+    return;
+  }
+
+  if (url.pathname.startsWith("/api/reservation-types/")) {
+    const reservationTypeId = decodeURIComponent(url.pathname.split("/").pop());
+
+    if (request.method === "PATCH") {
+      await handleUpdateReservationType(request, response, reservationTypeId);
+      return;
+    }
+
+    if (request.method === "DELETE") {
+      handleDeleteReservationType(request, response, reservationTypeId);
+      return;
+    }
   }
 
   if (request.method === "GET" && url.pathname === "/api/bookings") {

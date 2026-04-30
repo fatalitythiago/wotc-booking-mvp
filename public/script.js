@@ -3,6 +3,7 @@ const state = {
   courts: [],
   clients: [],
   bookings: [],
+  reservationTypes: [],
   demoAccounts: [],
   selectedBookingId: null,
   openSlotMenu: null,
@@ -10,6 +11,7 @@ const state = {
   clientSearchQuery: "",
   selectedClientId: null,
   bookingClientId: null,
+  editingReservationTypeId: null,
   lastRecurringResult: null
 };
 
@@ -30,6 +32,7 @@ const DEFAULT_BOOKING_TYPE = {
   slotType: "reservation",
   slotLabel: "Reservation"
 };
+const RESERVATION_TYPE_OPTION_PREFIX = "reservation-type:";
 const PAYMENT_STATUS_LABELS = {
   paid: "Paid",
   unpaid: "Unpaid",
@@ -89,6 +92,10 @@ const PANEL_TOOLS = {
   clients: {
     title: "Clients",
     subtitle: "Look up a client without leaving the scheduler."
+  },
+  bookingSetup: {
+    title: "Booking Setup",
+    subtitle: "Manage how courts are booked, including reservation types, lessons, events, and blocks."
   },
   payments: {
     title: "Payments",
@@ -194,6 +201,16 @@ function timeToMinutes(time) {
 function setMessage(target, text, type = "") {
   target.textContent = text;
   target.className = `message ${type}`.trim();
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[character]);
 }
 
 function getPaymentStatusLabel(status) {
@@ -766,6 +783,237 @@ function renderNotesTool() {
   }
 }
 
+function getEditingReservationType() {
+  return state.reservationTypes.find((item) => item.id === state.editingReservationTypeId) || null;
+}
+
+function formatDurationRange(reservationType) {
+  if (reservationType.minDuration === reservationType.maxDuration) {
+    return `${reservationType.defaultDuration} min`;
+  }
+
+  return `${reservationType.minDuration} - ${reservationType.maxDuration} min`;
+}
+
+function renderReservationTypeForm() {
+  const editingReservationType = getEditingReservationType();
+  const form = document.createElement("form");
+  form.className = "reservation-type-form";
+  form.innerHTML = `
+    <div class="tool-section-head">
+      <div>
+        <h3>${editingReservationType ? "Edit reservation type" : "Create reservation type"}</h3>
+        ${editingReservationType ? `<p class="muted form-context">Editing ${escapeHtml(editingReservationType.name)}</p>` : ""}
+      </div>
+      ${editingReservationType ? '<button type="button" class="ghost-button" data-reservation-type-reset>New type</button>' : ""}
+    </div>
+    <label>
+      Name
+      <input type="text" name="name" required />
+    </label>
+    <div class="time-row">
+      <label>
+        Min duration
+        <input type="number" name="minDuration" min="15" step="15" required />
+      </label>
+      <label>
+        Max duration
+        <input type="number" name="maxDuration" min="15" step="15" required />
+      </label>
+    </div>
+    <div class="time-row">
+      <label>
+        Default duration
+        <input type="number" name="defaultDuration" min="15" step="15" required />
+      </label>
+      <label>
+        Color
+        <input type="color" name="color" />
+      </label>
+    </div>
+    <label>
+      Fee responsibility
+      <input type="text" name="feeResponsibility" />
+    </label>
+    <div class="time-row">
+      <label>
+        Min players
+        <input type="number" name="minPlayers" min="1" required />
+      </label>
+      <label>
+        Max players
+        <input type="number" name="maxPlayers" min="1" required />
+      </label>
+    </div>
+    <label>
+      Guest setting
+      <input type="text" name="guests" />
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" name="isPublic" />
+      Public reservation type
+    </label>
+    <div class="form-actions">
+      <button type="submit">${editingReservationType ? "Save changes" : "Create reservation type"}</button>
+    </div>
+    <p class="message" aria-live="polite"></p>
+  `;
+
+  const fields = form.elements;
+  fields.namedItem("name").value = editingReservationType?.name || "";
+  fields.namedItem("minDuration").value = editingReservationType?.minDuration || 60;
+  fields.namedItem("maxDuration").value = editingReservationType?.maxDuration || 60;
+  fields.namedItem("defaultDuration").value = editingReservationType?.defaultDuration || 60;
+  fields.namedItem("color").value = editingReservationType?.color || "#1492cf";
+  fields.namedItem("feeResponsibility").value = editingReservationType?.feeResponsibility || "Reservation Owner";
+  fields.namedItem("minPlayers").value = editingReservationType?.minPlayers || 1;
+  fields.namedItem("maxPlayers").value = editingReservationType?.maxPlayers || 4;
+  fields.namedItem("guests").value = editingReservationType?.guests || "Not set";
+  fields.namedItem("isPublic").checked = Boolean(editingReservationType?.isPublic);
+
+  form.addEventListener("submit", handleReservationTypeSubmit);
+  form.querySelector("[data-reservation-type-reset]")?.addEventListener("click", () => {
+    state.editingReservationTypeId = null;
+    renderToolPanel();
+  });
+
+  toolPanel.appendChild(form);
+}
+
+function getReservationTypeFormPayload(form) {
+  const fields = form.elements;
+  return {
+    name: fields.namedItem("name").value,
+    minDuration: fields.namedItem("minDuration").value,
+    maxDuration: fields.namedItem("maxDuration").value,
+    defaultDuration: fields.namedItem("defaultDuration").value,
+    color: fields.namedItem("color").value,
+    feeResponsibility: fields.namedItem("feeResponsibility").value,
+    minPlayers: fields.namedItem("minPlayers").value,
+    maxPlayers: fields.namedItem("maxPlayers").value,
+    guests: fields.namedItem("guests").value,
+    isPublic: fields.namedItem("isPublic").checked
+  };
+}
+
+async function handleReservationTypeSubmit(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const message = form.querySelector(".message");
+  setMessage(message, "");
+
+  const editingReservationType = getEditingReservationType();
+  const url = editingReservationType
+    ? `/api/reservation-types/${encodeURIComponent(editingReservationType.id)}`
+    : "/api/reservation-types";
+  const method = editingReservationType ? "PATCH" : "POST";
+
+  try {
+    await fetchJson(url, {
+      method,
+      body: JSON.stringify(getReservationTypeFormPayload(form))
+    });
+    await loadReservationTypes();
+    state.editingReservationTypeId = null;
+    renderToolPanel();
+  } catch (error) {
+    setMessage(message, error.message, "error");
+  }
+}
+
+async function handleReservationTypeDelete(reservationType) {
+  try {
+    await fetchJson(`/api/reservation-types/${encodeURIComponent(reservationType.id)}`, {
+      method: "DELETE"
+    });
+    if (state.editingReservationTypeId === reservationType.id) {
+      state.editingReservationTypeId = null;
+    }
+    await loadReservationTypes();
+    renderToolPanel();
+  } catch (error) {
+    const message = toolPanel.querySelector(".reservation-type-message");
+    if (message) {
+      setMessage(message, error.message, "error");
+    }
+  }
+}
+
+function renderReservationTypeList() {
+  const heading = document.createElement("div");
+  heading.className = "tool-section-head";
+  heading.innerHTML = "<h3>Reservation Types</h3>";
+  toolPanel.appendChild(heading);
+
+  const message = document.createElement("p");
+  message.className = "message reservation-type-message";
+  message.setAttribute("aria-live", "polite");
+  toolPanel.appendChild(message);
+
+  if (state.reservationTypes.length === 0) {
+    const emptyState = document.createElement("p");
+    emptyState.className = "muted empty-state";
+    emptyState.textContent = "No reservation types yet.";
+    toolPanel.appendChild(emptyState);
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "reservation-type-list";
+
+  state.reservationTypes.forEach((reservationType) => {
+    const row = document.createElement("div");
+    row.className = "reservation-type-row";
+    if (reservationType.id === state.editingReservationTypeId) {
+      row.classList.add("is-editing");
+    }
+
+    const badge = document.createElement("span");
+    badge.className = "reservation-type-badge";
+    badge.style.backgroundColor = reservationType.color || "#1492cf";
+    badge.textContent = reservationType.name;
+
+    const details = renderInfoList([
+      { label: "Min/Max duration", value: formatDurationRange(reservationType) },
+      { label: "Default duration", value: `${reservationType.defaultDuration} min` },
+      { label: "Public", value: reservationType.isPublic ? "Yes" : "No" },
+      { label: "Fee responsibility", value: reservationType.feeResponsibility || "Reservation Owner" },
+      { label: "Min/Max players", value: `${reservationType.minPlayers} - ${reservationType.maxPlayers}` },
+      { label: "Guest(s)", value: reservationType.guests || "Not set" }
+    ]);
+
+    const actions = document.createElement("div");
+    actions.className = "reservation-type-actions";
+
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.className = "secondary-button";
+    editButton.textContent = reservationType.id === state.editingReservationTypeId ? "Editing" : "Edit";
+    editButton.disabled = reservationType.id === state.editingReservationTypeId;
+    editButton.addEventListener("click", () => {
+      state.editingReservationTypeId = reservationType.id;
+      renderToolPanel();
+    });
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "danger-button";
+    deleteButton.textContent = "Delete";
+    deleteButton.addEventListener("click", () => handleReservationTypeDelete(reservationType));
+
+    actions.append(editButton, deleteButton);
+    row.append(badge, details, actions);
+    list.appendChild(row);
+  });
+
+  toolPanel.appendChild(list);
+}
+
+function renderBookingSetupTool() {
+  renderReservationTypeList();
+  renderReservationTypeForm();
+}
+
 function renderReportsTool() {
   const activeBookings = state.bookings.filter((booking) => booking.status === "active");
   const cancelledBookings = state.bookings.filter((booking) => booking.status === "cancelled");
@@ -859,6 +1107,8 @@ function renderToolPanel() {
 
   if (state.activePanelView === "clients") {
     renderClientsTool();
+  } else if (state.activePanelView === "bookingSetup") {
+    renderBookingSetupTool();
   } else if (state.activePanelView === "payments") {
     renderPaymentsTool();
   } else if (state.activePanelView === "rules") {
@@ -973,23 +1223,92 @@ function renderUser() {
 
 function getManagedSlotOptions() {
   return SLOT_ACTIONS
-    .filter((action) => action.slotType && action.slotLabel)
+    .filter((action) => action.slotType && action.slotLabel && action.slotType !== DEFAULT_BOOKING_TYPE.slotType)
     .map((action) => ({
+      value: action.slotType,
       slotType: action.slotType,
       slotLabel: action.slotLabel
     }));
 }
 
-function getAllSlotTypeOptions() {
-  return [DEFAULT_BOOKING_TYPE, ...getManagedSlotOptions()];
+function getReservationTypeOptionValue(reservationTypeId) {
+  return `${RESERVATION_TYPE_OPTION_PREFIX}${reservationTypeId}`;
+}
+
+function getCustomReservationTypeOptions(currentBooking = null) {
+  const options = state.reservationTypes.map((reservationType) => ({
+    value: getReservationTypeOptionValue(reservationType.id),
+    slotType: DEFAULT_BOOKING_TYPE.slotType,
+    slotLabel: DEFAULT_BOOKING_TYPE.slotLabel,
+    reservationTypeId: reservationType.id,
+    reservationTypeName: reservationType.name,
+    reservationTypeColor: reservationType.color,
+    label: reservationType.name
+  }));
+
+  if (currentBooking?.reservationTypeId &&
+      !state.reservationTypes.some((item) => item.id === currentBooking.reservationTypeId)) {
+    options.push({
+      value: getReservationTypeOptionValue(currentBooking.reservationTypeId),
+      slotType: DEFAULT_BOOKING_TYPE.slotType,
+      slotLabel: DEFAULT_BOOKING_TYPE.slotLabel,
+      reservationTypeId: currentBooking.reservationTypeId,
+      reservationTypeName: currentBooking.reservationTypeName || "Deleted reservation type",
+      reservationTypeColor: currentBooking.reservationTypeColor || "",
+      label: `${currentBooking.reservationTypeName || "Deleted reservation type"} (not in setup)`
+    });
+  }
+
+  return options;
+}
+
+function getAllSlotTypeOptions(currentBooking = null) {
+  return [
+    { ...DEFAULT_BOOKING_TYPE, value: DEFAULT_BOOKING_TYPE.slotType, label: DEFAULT_BOOKING_TYPE.slotLabel },
+    ...getManagedSlotOptions().map((option) => ({ ...option, label: option.slotLabel })),
+    ...getCustomReservationTypeOptions(currentBooking)
+  ];
 }
 
 function getSlotTypeMeta(slotType) {
   if (!slotType || slotType === DEFAULT_BOOKING_TYPE.slotType) {
-    return DEFAULT_BOOKING_TYPE;
+    return { ...DEFAULT_BOOKING_TYPE, value: DEFAULT_BOOKING_TYPE.slotType };
+  }
+
+  const customReservationTypeId = String(slotType).startsWith(RESERVATION_TYPE_OPTION_PREFIX)
+    ? String(slotType).slice(RESERVATION_TYPE_OPTION_PREFIX.length)
+    : "";
+  const customReservationType = customReservationTypeId
+    ? state.reservationTypes.find((item) => item.id === customReservationTypeId)
+    : null;
+
+  if (customReservationType) {
+    return {
+      value: getReservationTypeOptionValue(customReservationType.id),
+      slotType: DEFAULT_BOOKING_TYPE.slotType,
+      slotLabel: DEFAULT_BOOKING_TYPE.slotLabel,
+      reservationTypeId: customReservationType.id,
+      reservationTypeName: customReservationType.name,
+      reservationTypeColor: customReservationType.color
+    };
+  }
+
+  if (customReservationTypeId) {
+    const selectOption = [...slotTypeSelect.options].find((option) => option.value === slotType);
+    if (selectOption?.dataset.reservationTypeId) {
+      return {
+        value: slotType,
+        slotType: DEFAULT_BOOKING_TYPE.slotType,
+        slotLabel: DEFAULT_BOOKING_TYPE.slotLabel,
+        reservationTypeId: selectOption.dataset.reservationTypeId,
+        reservationTypeName: selectOption.dataset.reservationTypeName || "",
+        reservationTypeColor: selectOption.dataset.reservationTypeColor || ""
+      };
+    }
   }
 
   return getManagedSlotOptions().find((option) => option.slotType === slotType) || {
+    value: slotType,
     slotType,
     slotLabel: slotType
   };
@@ -1009,15 +1328,38 @@ function getPlayerNameFieldLabel(slotType) {
   return slotType === DEFAULT_BOOKING_TYPE.slotType ? "Player name" : "Name";
 }
 
-function renderSlotTypeOptions() {
+function renderBookingTypeChip(booking) {
+  if ((booking.slotType || DEFAULT_BOOKING_TYPE.slotType) !== DEFAULT_BOOKING_TYPE.slotType ||
+      !booking.reservationTypeName) {
+    return "";
+  }
+
+  const color = /^#[0-9a-f]{6}$/i.test(String(booking.reservationTypeColor || ""))
+    ? booking.reservationTypeColor
+    : "#1492cf";
+
+  return `<span class="booking-type-chip" style="background-color: ${color};">${escapeHtml(booking.reservationTypeName)}</span>`;
+}
+
+function renderSlotTypeOptions(currentBooking = null) {
+  const currentValue = slotTypeSelect.value;
   slotTypeSelect.innerHTML = "";
 
-  getAllSlotTypeOptions().forEach((option) => {
+  getAllSlotTypeOptions(currentBooking).forEach((option) => {
     const selectOption = document.createElement("option");
-    selectOption.value = option.slotType;
-    selectOption.textContent = option.slotLabel;
+    selectOption.value = option.value;
+    selectOption.textContent = option.label || option.slotLabel;
+    if (option.reservationTypeId) {
+      selectOption.dataset.reservationTypeId = option.reservationTypeId;
+      selectOption.dataset.reservationTypeName = option.reservationTypeName || "";
+      selectOption.dataset.reservationTypeColor = option.reservationTypeColor || "";
+    }
     slotTypeSelect.appendChild(selectOption);
   });
+
+  if ([...slotTypeSelect.options].some((option) => option.value === currentValue)) {
+    slotTypeSelect.value = currentValue;
+  }
 }
 
 function syncFormForSlotType(nextType) {
@@ -1025,7 +1367,7 @@ function syncFormForSlotType(nextType) {
   const isStaffUser = state.user?.role === "staff";
   const isReservation = selectedMeta.slotType === DEFAULT_BOOKING_TYPE.slotType;
 
-  slotTypeSelect.value = selectedMeta.slotType;
+  slotTypeSelect.value = selectedMeta.value || selectedMeta.slotType;
   slotTypeSelect.dataset.previousType = selectedMeta.slotType;
   slotTypeSelect.dataset.previousLabel = selectedMeta.slotLabel;
   playerNameLabel.classList.remove("hidden");
@@ -1106,6 +1448,7 @@ function resetBookingForm() {
   bookingDateInput.value = datePicker.value;
   startTimeSelect.value = "09:00";
   endTimeSelect.value = "10:00";
+  renderSlotTypeOptions();
   slotTypeSelect.value = DEFAULT_BOOKING_TYPE.slotType;
   slotTypeSelect.disabled = state.user?.role !== "staff";
   slotTypeSelect.dataset.previousType = DEFAULT_BOOKING_TYPE.slotType;
@@ -1227,6 +1570,7 @@ async function handleSlotAction(action, courtId, startTime) {
 function loadBookingIntoForm(booking) {
   setSidePanelCollapsed(false);
   setActivePanelView("booking");
+  renderSlotTypeOptions(booking);
   state.selectedBookingId = booking.id;
   state.bookingClientId = booking.clientId || null;
   if (booking.clientId) {
@@ -1257,8 +1601,11 @@ function loadBookingIntoForm(booking) {
   cancelReasonLabel.classList.toggle("hidden", booking.status !== "active" || state.user.role !== "staff");
 
   const canEdit = booking.isOwner || state.user.role === "staff";
-  slotTypeSelect.value = booking.slotType || DEFAULT_BOOKING_TYPE.slotType;
-  syncFormForSlotType(slotTypeSelect.value);
+  const bookingTypeValue = booking.reservationTypeId
+    ? getReservationTypeOptionValue(booking.reservationTypeId)
+    : booking.slotType || DEFAULT_BOOKING_TYPE.slotType;
+  slotTypeSelect.value = bookingTypeValue;
+  syncFormForSlotType(bookingTypeValue);
   playerNameInput.value = booking.playerName || "";
   playerNameInput.disabled = !canEdit || state.user.role !== "staff";
   playerCombobox.classList.toggle("is-disabled", playerNameInput.disabled);
@@ -1328,9 +1675,10 @@ function buildSchedulerGrid() {
           ? booking.slotLabel
           : `${formatTimeLabel(booking.startTime)} - ${formatTimeLabel(booking.endTime)}`;
         bookingButton.innerHTML = `
-          <strong>${booking.displayName}</strong>
-          <span>${bookingMeta}</span>
-          ${booking.notes ? `<small>${booking.notes}</small>` : ""}
+          <strong>${escapeHtml(booking.displayName)}</strong>
+          ${renderBookingTypeChip(booking)}
+          <span>${escapeHtml(bookingMeta)}</span>
+          ${booking.notes ? `<small>${escapeHtml(booking.notes)}</small>` : ""}
         `;
         bookingButton.addEventListener("click", () => loadBookingIntoForm(booking));
         slot.appendChild(bookingButton);
@@ -1395,14 +1743,16 @@ function renderAgenda() {
       ? `managed-slot ${getSlotTypeClassName(booking.slotType)}`
       : "";
     card.className = `agenda-card ${booking.isOwner ? "owned" : ""} ${managedSlotClassName}`.trim();
+    const reservationTypeChip = renderBookingTypeChip(booking);
     card.innerHTML = `
       <div class="agenda-card-header">
-        <strong>${booking.displayName}</strong>
+        <strong>${escapeHtml(booking.displayName)}</strong>
         <span class="status-pill ${booking.slotType !== "reservation" ? `managed-slot ${getSlotTypeClassName(booking.slotType)}` : booking.status}">${booking.slotType !== "reservation" ? booking.slotLabel.toLowerCase() : booking.status}</span>
       </div>
-      <span>${court ? court.name : booking.courtId}</span>
+      ${reservationTypeChip}
+      <span>${escapeHtml(court ? court.name : booking.courtId)}</span>
       <span>${formatTimeLabel(booking.startTime)} - ${formatTimeLabel(booking.endTime)}</span>
-      <span>${booking.notes || "No notes"}</span>
+      <span>${escapeHtml(booking.notes || "No notes")}</span>
     `;
     card.addEventListener("click", () => loadBookingIntoForm(booking));
     bookingAgenda.appendChild(card);
@@ -1426,6 +1776,18 @@ async function loadClients() {
   const payload = await fetchJson("/api/clients");
   state.clients = payload.clients;
   renderClientInfoShortcut();
+}
+
+async function loadReservationTypes() {
+  if (state.user?.role !== "staff") {
+    state.reservationTypes = [];
+    renderSlotTypeOptions();
+    return;
+  }
+
+  const payload = await fetchJson("/api/reservation-types");
+  state.reservationTypes = payload.reservationTypes;
+  renderSlotTypeOptions();
 }
 
 async function loadBookings() {
@@ -1480,6 +1842,7 @@ async function loadSession() {
   renderUser();
   await loadCourts();
   await loadClients();
+  await loadReservationTypes();
   setSidePanelCollapsed(true);
   resetBookingForm();
   await loadBookings();
@@ -1528,6 +1891,7 @@ async function handleBookingSubmit(event) {
     : DEFAULT_BOOKING_TYPE;
   payload.slotType = selectedSlotMeta.slotType;
   payload.slotLabel = selectedSlotMeta.slotLabel;
+  payload.reservationTypeId = selectedSlotMeta.reservationTypeId || "";
 
   if (state.user.role === "staff") {
     payload.playerName = playerNameInput.value.trim();
@@ -1663,8 +2027,9 @@ async function init() {
     await loadBookings();
   });
   slotTypeSelect.addEventListener("change", () => {
+    const selectedMeta = getSlotTypeMeta(slotTypeSelect.value);
     syncFormForSlotType(slotTypeSelect.value);
-    if (slotTypeSelect.value !== DEFAULT_BOOKING_TYPE.slotType) {
+    if (selectedMeta.slotType !== DEFAULT_BOOKING_TYPE.slotType) {
       state.bookingClientId = null;
     }
   });

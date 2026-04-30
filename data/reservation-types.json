@@ -1,0 +1,15 @@
+[
+  {
+    "id": "testing-17349dc2",
+    "name": "Testing",
+    "minDuration": 60,
+    "maxDuration": 60,
+    "defaultDuration": 60,
+    "isPublic": true,
+    "feeResponsibility": "Reservation Owner",
+    "minPlayers": 1,
+    "maxPlayers": 4,
+    "guests": "Not set",
+    "color": "#1492cf"
+  }
+]

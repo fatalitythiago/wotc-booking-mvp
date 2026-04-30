@@ -14,8 +14,8 @@
   --booked: #f4f7fa;
   --danger: #b54535;
   --shadow: 0 22px 60px rgba(20, 146, 207, 0.12);
-  --scheduler-control-width: 146px;
-  --scheduler-menu-button-width: 70px;
+  --scheduler-control-width: 136px;
+  --scheduler-menu-button-width: 48px;
 }
 
 * {
@@ -239,6 +239,14 @@ button:hover {
   background: var(--accent-soft);
 }
 
+.danger-button {
+  background: linear-gradient(135deg, #d45e48 0%, var(--danger) 100%);
+}
+
+.danger-button:hover {
+  background: linear-gradient(135deg, var(--danger) 0%, #843326 100%);
+}
+
 .message.success {
   color: #25704a;
 }
@@ -378,22 +386,22 @@ button:hover {
 .scheduler-toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 16px;
-  margin-bottom: 16px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .scheduler-date-menu {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 
 .scheduler-date {
   grid-template-columns: auto var(--scheduler-control-width);
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: auto;
   min-width: 0;
 }
@@ -401,14 +409,22 @@ button:hover {
 .scheduler-date span {
   align-self: center;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   font-weight: 800;
   white-space: nowrap;
 }
 
+.scheduler-date input {
+  min-height: 38px;
+  padding: 7px 8px;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
 .scheduler-menu {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   min-width: 0;
   flex-wrap: wrap;
@@ -417,11 +433,12 @@ button:hover {
 .hamburger-button {
   display: grid;
   place-items: center;
-  gap: 4px;
+  gap: 3px;
   width: var(--scheduler-menu-button-width);
-  height: 46px;
+  height: 38px;
   padding: 0;
   border: 1px solid var(--line);
+  border-radius: 12px;
   background: #fff;
   color: var(--ink);
 }
@@ -432,7 +449,7 @@ button:hover {
 
 .hamburger-button span {
   display: block;
-  width: 20px;
+  width: 16px;
   height: 2px;
   border-radius: 999px;
   background: currentColor;
@@ -599,6 +616,19 @@ button:hover {
   background: transparent;
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+.booking-block .booking-type-chip,
+.schedule-slot.booked .booking-block .booking-type-chip,
+.schedule-slot:hover .booking-block .booking-type-chip,
+.agenda-card .booking-type-chip {
+  justify-self: center;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
 }
 
 .booking-block small {
@@ -780,7 +810,8 @@ button:hover {
 .tool-alert-list,
 .tool-info-list,
 .payment-history-list,
-.audit-list {
+.audit-list,
+.reservation-type-list {
   display: grid;
   gap: 10px;
 }
@@ -835,7 +866,8 @@ button:hover {
 .tool-note,
 .tool-info-row,
 .payment-history-row,
-.audit-row {
+.audit-row,
+.reservation-type-row {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #fbfdff;
@@ -908,6 +940,54 @@ button:hover {
 .audit-row.managed-slot {
   border-color: rgba(223, 98, 41, 0.2);
   background: #fffaf8;
+}
+
+.tool-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reservation-type-form,
+.reservation-type-row {
+  display: grid;
+  gap: 12px;
+}
+
+.reservation-type-form {
+  padding-top: 4px;
+}
+
+.reservation-type-row {
+  padding: 12px;
+}
+
+.reservation-type-row.is-editing {
+  border-color: rgba(20, 146, 207, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(20, 146, 207, 0.18);
+}
+
+.reservation-type-badge {
+  justify-self: start;
+  max-width: 100%;
+  padding: 5px 8px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.86rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.reservation-type-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.form-context {
+  margin: 2px 0 0;
+  font-size: 0.82rem;
 }
 
 .managed-alert {
